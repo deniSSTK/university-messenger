@@ -169,7 +169,7 @@ Key testing scenarios include registration and sign-in, access restricted to a u
 
 - [x] Prepare the NestJS backend foundation.
 - [x] Configure Prisma and local PostgreSQL through Docker Compose.
-- [ ] Design user, conversation, and message models.
+- [x] Design user, session, conversation, and message models.
 - [ ] Implement registration, authentication, and profiles.
 - [ ] Implement user search and direct conversations.
 - [ ] Add real-time messaging and conversation history.
