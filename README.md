@@ -52,12 +52,12 @@ The core version includes direct conversations only. Group chats, channels, call
 
 | Component         | Technologies and Purpose                                   | Status                       |
 | ----------------- | ---------------------------------------------------------- | ---------------------------- |
-| Backend           | TypeScript, Node.js, NestJS - API and server logic         | Foundation prepared          |
+| Backend           | TypeScript, Node.js, NestJS - API and server logic         | Auth API and Swagger implemented |
 | Database          | PostgreSQL, Prisma - data storage and migrations           | Configuration prepared       |
 | Local Environment | Docker Compose - local PostgreSQL                          | Prepared                     |
 | Frontend          | Angular, TypeScript - responsive web interface             | Planned                      |
 | Messaging         | WebSocket - real-time messages and conversation events     | Planned                      |
-| Testing           | Jest, Supertest - unit and end-to-end tests                | Basic configuration prepared |
+| Testing           | Jest, Supertest - unit and end-to-end tests                | Auth unit, HTTP, and database scenarios |
 | CI/CD             | GitHub Actions - checks, builds, and deployment automation | Planned                      |
 
 The Angular frontend will use the backend HTTP API for accounts, profiles, conversation lists, and message history. A WebSocket connection will deliver new messages, read receipts, and typing events. PostgreSQL will store users, conversations, and messages.
@@ -71,15 +71,54 @@ Authentication and conversation membership checks must be enforced on the server
 ├── backend/              # NestJS, Prisma, and local database configuration
 │   ├── prisma/           # Database schema and migrations
 │   ├── src/              # Backend source code
+│   │   ├── common/       # Shared utilities
+│   │   ├── core/config/  # Typed environment configuration and validation
+│   │   ├── modules/      # Feature modules, starting with auth
+│   │   └── prisma/       # Prisma client lifecycle and dependency injection
 │   ├── test/             # End-to-end tests
 │   ├── .env.example      # Example environment variables
 │   └── docker-compose.yml
 ├── frontend/             # Angular client application (planned)
+├── AGENTS.md             # Repository-wide development rules
 ├── LICENSE
 └── README.md
 ```
 
 The backend and frontend share a single repository. Install dependencies and run commands from each application's directory. The `frontend/` directory currently contains only a placeholder file; the client application will be added separately.
+
+## Backend Module Structure
+
+Features live under `backend/src/modules/<feature>/`:
+
+```text
+auth/
+├── domain/         # Models, domain errors, repository interfaces, and ports
+├── repository/     # Prisma implementation of repository contracts
+├── service/        # Use cases, service inputs/results, and auth service adapters
+├── delivery/http/  # Controllers, guards, HTTP DTOs, Swagger, and error mapping
+└── auth.module.ts  # Dependency wiring
+```
+
+HTTP DTOs are mapped to service inputs. Services depend on ORM-independent repository
+interfaces and return application results; delivery maps those results to HTTP responses.
+Domain contracts do not import Prisma or NestJS. Prisma-specific queries and transaction
+clients stay inside the repository implementation. Transaction callbacks expose repository
+operations rather than the underlying client. Unit tests for services mock the domain ports.
+
+HTTP controllers read input according to where the client sends it:
+
+| Decorator | Source | Example |
+| --- | --- | --- |
+| `@Body()` | JSON request body | Registration, login, or a future message payload |
+| `@Param()` | URL path parameters | A future `/messages/:id` route |
+| `@Query()` | URL query parameters | A future `/users?search=alice` request |
+| `@Req()` | Request context | Refresh cookie or the session attached by a guard |
+
+These decorators can be combined in one endpoint. Request objects, cookies, and Express
+response objects stay in delivery; services receive explicit application inputs.
+For auth, `setAuthCookieAndBuildResponse` writes the refresh token to an HttpOnly cookie
+and maps the service result to a JSON response containing the user and access token.
+It is a private helper shared by register, login, and refresh.
 
 ## Running the Backend Locally
 
@@ -113,6 +152,9 @@ cd backend
 
    The `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, and `DB_PORT` variables configure the PostgreSQL connection. The example values are intended for local development.
 
+   Replace the `JWT_SECRET=secret` placeholder with a random secret of at least 32 bytes.
+   Generate a value with `openssl rand -hex 32` and copy it into `.env` before starting the server.
+
 3. Start the database and wait until it is ready:
 
    ```bash
@@ -132,7 +174,82 @@ cd backend
    npm run start:dev
    ```
 
-By default, the server is available at [http://localhost:3000](http://localhost:3000), and PostgreSQL is available at `localhost:6012`. The server currently runs the base NestJS application; the messaging API will be added during development.
+By default, the server listens at `http://localhost:3000`, and PostgreSQL is available at `localhost:6012`.
+Authentication endpoints are available under `/auth`; the messaging API is planned. The root `/` has no endpoint.
+
+### Environment Configuration
+
+Runtime settings are loaded and validated in `backend/src/core/config` and injected through `AppConfig`.
+Prisma CLI reuses the database config reader without requiring JWT settings.
+
+| Variable | Purpose | Default or example |
+| --- | --- | --- |
+| `DB_USER`, `DB_PASSWORD`, `DB_NAME` | Required PostgreSQL credentials and database name | Local values in `.env.example` |
+| `DB_HOST` | PostgreSQL host | Defaults to `localhost` |
+| `DB_PORT` | PostgreSQL port | Defaults to `5432`; local Compose example uses `6012` |
+| `PORT` | HTTP server port | Defaults to `3000` |
+| `NODE_ENV` | Environment; `production` enables Secure refresh cookies | Example: `development` |
+| `FRONTEND_ORIGIN` | Allowed frontend origin; HTTPS required in production | Defaults to `http://localhost:4200` |
+| `JWT_SECRET` | Required signing secret, at least 32 bytes | Generate your own value |
+| `JWT_ACCESS_TOKEN_TTL` | Required access token lifetime in seconds | `900` (15 minutes) |
+| `JWT_SESSION_TTL` | Required session lifetime in milliseconds | `604800000` (7 days) |
+
+Both TTL values must be positive safe integers. Email casing is preserved; email lookup and uniqueness are case-insensitive.
+Usernames are trimmed and converted to lowercase. Passwords are not trimmed or lowercased.
+
+### API Documentation
+
+Swagger UI is available at [http://localhost:3000/docs](http://localhost:3000/docs),
+and the OpenAPI JSON specification is available at [http://localhost:3000/docs-json](http://localhost:3000/docs-json).
+
+Register or log in through the API, then paste the returned `accessToken` into Swagger's **Authorize** dialog for protected endpoints.
+The API sets an HttpOnly `refreshToken` cookie automatically. Swagger UI sends that cookie when refreshing the session; it cannot be entered manually.
+Frontend requests must include credentials (`credentials: 'include'` with fetch or `withCredentials: true` with Angular HttpClient).
+Refreshing rotates the refresh token without extending the configured session lifetime. Logging out revokes the current session.
+
+### Authentication API
+
+| Endpoint | Input | Successful response |
+| --- | --- | --- |
+| `POST /auth/register` | JSON: `email`, `username`, `displayName`, `password` | `201`: user and access token; refresh cookie |
+| `POST /auth/login` | JSON: `email`, `password` | `200`: user and access token; refresh cookie |
+| `POST /auth/refresh` | `refreshToken` cookie; no JSON body required | `200`: user and new access token; rotated refresh cookie |
+| `POST /auth/logout` | `Authorization: Bearer <accessToken>` | `204`: current session revoked and refresh cookie cleared |
+| `GET /auth/me` | `Authorization: Bearer <accessToken>` | `200`: current public user |
+
+Register, login, and refresh return `{ user, accessToken, tokenType, expiresIn }`.
+`expiresIn` is measured in seconds. The public user contains `id`, `email`, `username`,
+`displayName`, `createdAt`, and `updatedAt`. Refresh tokens are sent in an HttpOnly cookie,
+not in the JSON body. Password hashes and token hashes are never returned.
+
+Access tokens require an active, unexpired session. Logging out invalidates both token types
+for that session; other sessions remain active. Deleted users cannot log in, refresh, or use protected endpoints.
+Validation errors return `400`, invalid credentials or tokens return `401`, untrusted browser
+origins return `403` for auth POST requests, and duplicate email or username returns `409`.
+Field restrictions and schemas are available in Swagger.
+
+### Testing
+
+Generate Prisma Client before running checks. Service unit tests mock domain ports;
+repository unit tests verify query restrictions and transaction routing, and HTTP tests verify transport mapping and Swagger.
+
+```bash
+npm test -- --runInBand
+npm run build
+npx eslint "{src,apps,libs,test}/**/*.ts"
+```
+
+To include the PostgreSQL auth scenarios, start the local database and provide a connection URL:
+
+```bash
+TEST_DATABASE_URL='postgresql://messenger-user:secret@localhost:6012/messenger-db' npm run test:e2e -- --runInBand
+```
+
+Use credentials matching your local database. The database user needs permission to create schemas.
+Tests apply migrations inside a fresh schema and remove that schema afterward.
+Without `TEST_DATABASE_URL`, the PostgreSQL auth suite is skipped; the remaining HTTP tests still run.
+
+### Stopping the Database
 
 To stop the local database:
 
@@ -170,7 +287,8 @@ Key testing scenarios include registration and sign-in, access restricted to a u
 - [x] Prepare the NestJS backend foundation.
 - [x] Configure Prisma and local PostgreSQL through Docker Compose.
 - [x] Design user, session, conversation, and message models.
-- [ ] Implement registration, authentication, and profiles.
+- [x] Implement registration, login, refresh, logout, and current-user endpoints.
+- [ ] Implement profile editing.
 - [ ] Implement user search and direct conversations.
 - [ ] Add real-time messaging and conversation history.
 - [ ] Add message editing, deletion, and read receipts.
