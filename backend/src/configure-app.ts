@@ -1,9 +1,10 @@
 import { type INestApplication, ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
-import { AuthConfig } from './auth/auth.config.js';
+import { AppConfig } from './core/config/app.config.js';
+import { configureSwagger } from './configure-swagger.js';
 
-export function configureApp(app: INestApplication) {
-  const config = app.get(AuthConfig);
+function configureApp(app: INestApplication) {
+  const config = app.get(AppConfig);
   app.use(cookieParser());
   app.enableCors({ origin: config.frontendOrigin, credentials: true });
   app.useGlobalPipes(
@@ -15,4 +16,7 @@ export function configureApp(app: INestApplication) {
     }),
   );
   app.enableShutdownHooks();
+  configureSwagger(app);
 }
+
+export { configureApp };

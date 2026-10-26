@@ -1,13 +1,8 @@
-import 'dotenv/config';
 import { defineConfig } from 'prisma/config';
+import { readDatabaseConfig } from './src/core/config/environment.js';
 
-const user = process.env.DB_USER;
-const password = process.env.DB_PASSWORD;
-const host = process.env.DB_HOST || 'localhost';
-const port = process.env.DB_PORT || '5432';
-const dbName = process.env.DB_NAME;
-
-const DB_URL = `postgresql://${user}:${password}@${host}:${port}/${dbName}?schema=public`;
+const { user, password, host, port, database } = readDatabaseConfig();
+const databaseUrl = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${encodeURIComponent(database)}?schema=public`;
 
 export default defineConfig({
   schema: 'prisma/schema.prisma',
@@ -15,6 +10,6 @@ export default defineConfig({
     path: 'prisma/migrations',
   },
   datasource: {
-    url: DB_URL,
+    url: databaseUrl,
   },
 });

@@ -1,8 +1,9 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import * as argon2 from 'argon2';
+import type { PasswordHasher } from '../domain/auth.ports.js';
 
 @Injectable()
-export class PasswordService implements OnModuleInit {
+class PasswordService implements OnModuleInit, PasswordHasher {
   private dummyHash!: string;
 
   async onModuleInit() {
@@ -20,6 +21,9 @@ export class PasswordService implements OnModuleInit {
 
   async verify(password: string, passwordHash?: string) {
     const valid = await argon2.verify(passwordHash ?? this.dummyHash, password);
+
     return valid && passwordHash !== undefined;
   }
 }
+
+export { PasswordService };
