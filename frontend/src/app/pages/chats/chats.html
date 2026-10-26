@@ -1,0 +1,39 @@
+<div class="telegram-layout">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="menu-icon">☰</div>
+      <input type="text" placeholder="Поиск" class="search-input">
+    </div>
+
+    <ul class="chat-list">
+      <li class="chat-item active">
+        <div class="avatar blue">Т</div>
+        <div class="chat-info">
+          <div class="chat-header">
+            <span class="chat-name">Тимлид</span>
+            <span class="chat-time">12:00</span>
+          </div>
+          <span class="chat-last-message">Архитектура принята, делай чаты.</span>
+        </div>
+      </li>
+      <li class="chat-item">
+        <div class="avatar purple">Б</div>
+        <div class="chat-info">
+          <div class="chat-header">
+            <span class="chat-name">Бэкендер NestJS</span>
+            <span class="chat-time">Вчера</span>
+          </div>
+          <span class="chat-last-message">Токены работают!</span>
+        </div>
+      </li>
+    </ul>
+
+    <button class="logout-btn" (click)="logout()">Выйти из аккаунта</button>
+  </aside>
+
+  <main class="chat-area">
+    <div class="chat-placeholder">
+      <span>Выберите чат</span>
+    </div>
+  </main>
+</div>
