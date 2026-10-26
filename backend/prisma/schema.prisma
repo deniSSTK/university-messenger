@@ -1,6 +1,8 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "cjs"
+  importFileExtension = "js"
 }
 
 datasource db {
@@ -9,6 +11,7 @@ datasource db {
 
 model User {
   id           String    @id @default(uuid()) @db.Uuid
+  /// Case-insensitive uniqueness is enforced by User_email_lower_key in SQL migrations.
   email        String    @unique
   username     String    @unique
   displayName  String
