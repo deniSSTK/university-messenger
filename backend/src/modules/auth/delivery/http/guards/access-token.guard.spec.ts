@@ -1,8 +1,8 @@
 import { type ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'node:crypto';
-import type { Prisma } from '../generated/prisma/client.js';
-import { PrismaService } from '../prisma/prisma.service.js';
+import { InvalidSessionError } from '../../../domain/auth.errors.js';
+import { AuthService } from '../../../service/auth.service.js';
 import { AccessTokenGuard } from './access-token.guard.js';
 
 describe('AccessTokenGuard', () => {
@@ -17,11 +17,12 @@ describe('AccessTokenGuard', () => {
   });
   const sub = randomUUID();
   const sid = randomUUID();
-  let findFirst: jest.Mock;
+  let getActiveSession: jest.Mock;
   let guard: AccessTokenGuard;
 
   function context(authorization?: string) {
     const request = { headers: { authorization } };
+
     return {
       request,
       context: {
@@ -31,10 +32,12 @@ describe('AccessTokenGuard', () => {
   }
 
   beforeEach(() => {
-    findFirst = jest.fn().mockResolvedValue({ id: sid, user: { id: sub } });
+    getActiveSession = jest
+      .fn()
+      .mockResolvedValue({ sessionId: sid, user: { id: sub } });
     guard = new AccessTokenGuard(jwt, {
-      userSession: { findFirst },
-    } as unknown as PrismaService);
+      getActiveSession,
+    } as unknown as AuthService);
   });
 
   it('authenticates a signed token backed by an active session', async () => {
@@ -45,14 +48,7 @@ describe('AccessTokenGuard', () => {
       user: { id: sub },
       sessionId: sid,
     });
-    const [args] = findFirst.mock.calls[0] as [Prisma.UserSessionFindFirstArgs];
-    expect(args.where).toMatchObject({
-      id: sid,
-      userId: sub,
-      revokedAt: null,
-      user: { deletedAt: null },
-    });
-    expect(args.where?.expiresAt).toHaveProperty('gt', expect.any(Date));
+    expect(getActiveSession).toHaveBeenCalledWith(sid, sub);
   });
 
   it.each([
@@ -65,7 +61,7 @@ describe('AccessTokenGuard', () => {
     await expect(
       guard.canActivate(context(authorization).context),
     ).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(findFirst).not.toHaveBeenCalled();
+    expect(getActiveSession).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -79,30 +75,34 @@ describe('AccessTokenGuard', () => {
   ])('rejects token: %s', async (scenario) => {
     let token: string;
     const payload = { sub, sid, type: 'access' };
-    if (scenario === 'expired') token = jwt.sign(payload, { expiresIn: -1 });
-    else if (scenario === 'wrong-secret')
+
+    if (scenario === 'expired') {
+      token = jwt.sign(payload, { expiresIn: -1 });
+    } else if (scenario === 'wrong-secret') {
       token = jwt.sign(payload, { secret: 'other-secret' });
-    else if (scenario === 'wrong-type')
+    } else if (scenario === 'wrong-type') {
       token = jwt.sign({ ...payload, type: 'refresh' });
-    else if (scenario === 'wrong-subject')
+    } else if (scenario === 'wrong-subject') {
       token = jwt.sign({ ...payload, sub: 'bad-id' });
-    else if (scenario === 'wrong-session')
+    } else if (scenario === 'wrong-session') {
       token = jwt.sign({ ...payload, sid: 'bad-id' });
-    else if (scenario === 'wrong-audience')
+    } else if (scenario === 'wrong-audience') {
       token = jwt.sign(payload, { audience: 'different-api' });
-    else
+    } else {
       token = new JwtService({ secret: 'test-secret' }).sign(payload, {
         issuer: 'test',
         audience: 'test-api',
       });
+    }
+
     await expect(
       guard.canActivate(context(`Bearer ${token}`).context),
     ).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(findFirst).not.toHaveBeenCalled();
+    expect(getActiveSession).not.toHaveBeenCalled();
   });
 
   it('rejects a revoked/expired session or a deleted user', async () => {
-    findFirst.mockResolvedValue(null);
+    getActiveSession.mockRejectedValue(new InvalidSessionError());
     await expect(
       guard.canActivate(
         context(`Bearer ${jwt.sign({ sub, sid, type: 'access' })}`).context,
@@ -111,7 +111,7 @@ describe('AccessTokenGuard', () => {
   });
 
   it('preserves database errors instead of reporting invalid credentials', async () => {
-    findFirst.mockRejectedValue(new Error('database unavailable'));
+    getActiveSession.mockRejectedValue(new Error('database unavailable'));
     await expect(
       guard.canActivate(
         context(`Bearer ${jwt.sign({ sub, sid, type: 'access' })}`).context,

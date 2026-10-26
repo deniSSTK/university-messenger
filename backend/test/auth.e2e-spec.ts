@@ -3,7 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { createHash, randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Pool } from 'pg';
 import request from 'supertest';
@@ -34,6 +34,7 @@ function body(response: Response): AuthResponse {
 
 function refreshCookie(response: Response): string {
   const cookies = response.headers['set-cookie'] as unknown as string[];
+
   return cookies
     .find((value) => value.startsWith('refreshToken='))!
     .split(';')[0];
@@ -45,6 +46,13 @@ describeDatabase('Auth API (PostgreSQL)', () => {
   let prisma: PrismaClient;
   let jwt: JwtService;
   const schema = `auth_test_${randomUUID().replaceAll('-', '')}`;
+  const previousDatabase = {
+    JWT_ACCESS_TOKEN_TTL: process.env.JWT_ACCESS_TOKEN_TTL,
+    JWT_SESSION_TTL: process.env.JWT_SESSION_TTL,
+    DB_USER: process.env.DB_USER,
+    DB_PASSWORD: process.env.DB_PASSWORD,
+    DB_NAME: process.env.DB_NAME,
+  };
   const previousSecret = process.env.JWT_SECRET;
   const previousOrigin = process.env.FRONTEND_ORIGIN;
   const origin =
@@ -52,31 +60,44 @@ describeDatabase('Auth API (PostgreSQL)', () => {
       ? 'https://app.example.com'
       : 'http://localhost:4200';
   const payload = {
-    email: 'alice@example.com',
+    email: 'Alice@Example.com',
     username: 'alice',
     displayName: 'Alice',
     password: 'valid-password123',
   };
 
   beforeAll(async () => {
+    process.env.JWT_ACCESS_TOKEN_TTL = '900';
+    process.env.JWT_SESSION_TTL = '604800000';
+    process.env.DB_USER = 'test-user';
+    process.env.DB_PASSWORD = 'test-password';
+    process.env.DB_NAME = 'test-db';
     process.env.JWT_SECRET = 'test-only-secret-at-least-32-bytes-long';
     process.env.FRONTEND_ORIGIN = origin;
     pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
     const connection = await pool.connect();
+
     try {
       await connection.query(`CREATE SCHEMA "${schema}"`);
       await connection.query(`SET search_path TO "${schema}"`);
-      const migration = await readFile(
-        join(
-          process.cwd(),
-          'prisma/migrations/20261020190100_init_messenger/migration.sql',
-        ),
-        'utf8',
-      );
-      await connection.query(migration);
+      const migrationsPath = join(process.cwd(), 'prisma/migrations');
+      const entries = await readdir(migrationsPath, { withFileTypes: true });
+      const migrations = entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort();
+
+      for (const name of migrations) {
+        const migration = await readFile(
+          join(migrationsPath, name, 'migration.sql'),
+          'utf8',
+        );
+        await connection.query(migration);
+      }
     } finally {
       connection.release();
     }
+
     prisma = new PrismaClient({
       adapter: new PrismaPg(
         { connectionString: process.env.TEST_DATABASE_URL },
@@ -102,14 +123,31 @@ describeDatabase('Auth API (PostgreSQL)', () => {
   afterAll(async () => {
     await app?.close();
     await prisma?.$disconnect();
+
     if (pool) {
       await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
       await pool.end();
     }
-    if (previousSecret === undefined) delete process.env.JWT_SECRET;
-    else process.env.JWT_SECRET = previousSecret;
-    if (previousOrigin === undefined) delete process.env.FRONTEND_ORIGIN;
-    else process.env.FRONTEND_ORIGIN = previousOrigin;
+
+    for (const [key, value] of Object.entries(previousDatabase)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+
+    if (previousSecret === undefined) {
+      delete process.env.JWT_SECRET;
+    } else {
+      process.env.JWT_SECRET = previousSecret;
+    }
+
+    if (previousOrigin === undefined) {
+      delete process.env.FRONTEND_ORIGIN;
+    } else {
+      process.env.FRONTEND_ORIGIN = previousOrigin;
+    }
   });
 
   const register = () =>
@@ -124,7 +162,7 @@ describeDatabase('Auth API (PostgreSQL)', () => {
       .set('Origin', origin)
       .send({
         ...payload,
-        email: ' ALICE@EXAMPLE.COM ',
+        email: ` ${payload.email} `,
         username: ' ALICE ',
         displayName: ' Alice ',
       })
@@ -199,7 +237,7 @@ describeDatabase('Auth API (PostgreSQL)', () => {
       .expect(400);
   });
 
-  it('rejects duplicate emails/usernames, including normalized case', async () => {
+  it('rejects duplicate emails/usernames, regardless of case', async () => {
     await register();
     await request(app.getHttpServer())
       .post('/auth/register')
@@ -215,7 +253,13 @@ describeDatabase('Auth API (PostgreSQL)', () => {
 
   it('handles concurrent duplicate registrations without creating orphan sessions', async () => {
     const responses = await Promise.all([
-      request(app.getHttpServer()).post('/auth/register').send(payload),
+      request(app.getHttpServer())
+        .post('/auth/register')
+        .send({
+          ...payload,
+          email: payload.email.toUpperCase(),
+          username: 'another',
+        }),
       request(app.getHttpServer()).post('/auth/register').send(payload),
     ]);
     expect(responses.map((response) => response.status).sort()).toEqual([
@@ -225,7 +269,7 @@ describeDatabase('Auth API (PostgreSQL)', () => {
     expect(await prisma.userSession.count()).toBe(1);
   });
 
-  it('logs in with normalized email and returns the same error for invalid credentials', async () => {
+  it('logs in regardless of email case and returns the same error for invalid credentials', async () => {
     await register();
     await request(app.getHttpServer())
       .post('/auth/login')
@@ -375,7 +419,11 @@ describeDatabase('Auth API (PostgreSQL)', () => {
         const call = endpoint.endsWith('me')
           ? request(app.getHttpServer()).get(endpoint)
           : request(app.getHttpServer()).post(endpoint);
-        if (authorization) call.set('Authorization', authorization);
+
+        if (authorization) {
+          call.set('Authorization', authorization);
+        }
+
         await call.expect(401);
       }
     },

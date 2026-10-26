@@ -1,0 +1,49 @@
+import { ApiProperty } from '@nestjs/swagger';
+import { AUTH_EXAMPLES, AUTH_USER_EXAMPLE } from './auth.examples.js';
+
+class PublicUserDto {
+  @ApiProperty({ example: AUTH_EXAMPLES.userId, format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: AUTH_EXAMPLES.email, format: 'email' })
+  email!: string;
+
+  @ApiProperty({ example: AUTH_EXAMPLES.username })
+  username!: string;
+
+  @ApiProperty({ example: AUTH_EXAMPLES.displayName })
+  displayName!: string;
+
+  @ApiProperty({
+    example: AUTH_EXAMPLES.createdAt,
+    type: String,
+    format: 'date-time',
+  })
+  createdAt!: Date;
+
+  @ApiProperty({
+    example: AUTH_EXAMPLES.updatedAt,
+    type: String,
+    format: 'date-time',
+  })
+  updatedAt!: Date;
+}
+
+class AuthResponseDto {
+  @ApiProperty({ type: PublicUserDto, example: AUTH_USER_EXAMPLE })
+  user!: PublicUserDto;
+
+  @ApiProperty({ example: AUTH_EXAMPLES.accessToken })
+  accessToken!: string;
+
+  @ApiProperty({ example: AUTH_EXAMPLES.tokenType, enum: ['Bearer'] })
+  tokenType!: string;
+
+  @ApiProperty({
+    example: AUTH_EXAMPLES.expiresIn,
+    description: 'Access token lifetime in seconds.',
+  })
+  expiresIn!: number;
+}
+
+export { PublicUserDto, AuthResponseDto };

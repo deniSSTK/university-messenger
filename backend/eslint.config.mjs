@@ -35,10 +35,38 @@ export default tseslint.config(
   },
   {
     rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-explicit-any': 'error',
+      curly: ['error', 'all'],
+      'padding-line-between-statements': [
+        'error',
+        { blankLine: 'always', prev: '*', next: ['if', 'try', 'return'] },
+        { blankLine: 'always', prev: 'block-like', next: '*' },
+      ],
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
       "prettier/prettier": ["error", { endOfLine: "auto" }],
+    },
+  },
+  {
+    files: ['src/modules/*/domain/**/*.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [{
+          group: ['@nestjs/*', '@prisma/*', 'express', 'class-validator', 'class-transformer', '**/generated/**', '**/repository/**', '**/service/**', '**/delivery/**', '**/core/**'],
+          message: 'Domain contracts must not depend on infrastructure or outer layers.',
+        }],
+      }],
+    },
+  },
+  {
+    files: ['src/modules/*/service/auth.service.ts', 'src/modules/*/service/auth.types.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [{
+          group: ['@nestjs/*', '@prisma/*', 'express', '**/generated/**', '**/repository/**', '**/delivery/**', '**/core/**'],
+          message: 'Use cases must depend on domain contracts, not concrete adapters or HTTP DTOs.',
+        }],
+      }],
     },
   },
 );
