@@ -61,3 +61,6 @@ backend/prisma/schema.d.ts
 backend/prisma/schema.json
 
 backend/generated/prisma/
+
+.vscode/
+generated/
