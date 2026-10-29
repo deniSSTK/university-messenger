@@ -21,7 +21,7 @@ export function passwordMatchValidator(control: AbstractControl): ValidationErro
   standalone: true,
   imports: [ReactiveFormsModule],
   templateUrl: './register.html',
-  styleUrl: './register.css',
+  styleUrl: './register.scss',
 })
 export class Register {
   private authService = inject(Auth);

@@ -5,7 +5,7 @@ import { Router } from '@angular/router';
   selector: 'app-chats',
   standalone: true,
   templateUrl: './chats.html',
-  styleUrl: './chats.css',
+  styleUrl: './chats.scss',
 })
 export class Chats {
   private router = inject(Router);
