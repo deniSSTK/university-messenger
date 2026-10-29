@@ -8,7 +8,7 @@ import { Auth } from '../../core/services/auth';
   standalone: true,
   imports: [ReactiveFormsModule],
   templateUrl: './login.html',
-  styleUrl: './login.css',
+  styleUrl: './login.scss',
 })
 export class Login {
   private authService = inject(Auth);

@@ -27,7 +27,6 @@ export class Auth {
     if (response && response.accessToken) {
       localStorage.setItem('accessToken', response.accessToken);
     }
-    // Если твой NestJS возвращает refresh токен, тоже его сохраняем
     if (response && response.refreshToken) {
       localStorage.setItem('refreshToken', response.refreshToken);
     }
