@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { PaginatedResponseDto } from '../../../../../common/delivery/http/dto/paginated-response.dto.js';
+import { PaginatedResponseDto } from '../../../../../core/pagination/dto/paginated-response.dto.js';
 import { USERS_EXAMPLES } from './users.examples.js';
 
 class UserSearchItemDto {

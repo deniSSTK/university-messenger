@@ -17,11 +17,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "lint": "eslint \"src/**/*.ts\" --fix",
-    "prisma:generate": "prisma format && prisma generate && prisma generate --schema prisma/message-shards/schema.prisma",
-    "storage:migrate": "tsx src/commands/message-storage.ts migrate",
-    "storage:partitions": "tsx src/commands/message-storage.ts partitions",
-    "storage:move-chat": "tsx src/commands/message-storage.ts move-chat",
-    "storage:status": "tsx src/commands/message-storage.ts status",
+    "prisma:generate": "prisma format && prisma generate",
     "migrate:new": "npm run prisma:generate && npm run db:up && prisma migrate dev --create-only",
     "migrate:apply": "prisma migrate deploy",
     "db:up": "docker compose up -d db"
