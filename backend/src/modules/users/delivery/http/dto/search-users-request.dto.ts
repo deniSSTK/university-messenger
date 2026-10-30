@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsString, Length, Matches } from 'class-validator';
-import { PaginationRequestDto } from '../../../../../common/delivery/http/dto/pagination-request.dto.js';
+import { PaginationRequestDto } from '../../../../../core/pagination/dto/pagination-request.dto.js';
 import { trimLowercaseAndRemovePrefix } from '../../../../../common/utils/string.transforms.js';
 import {
   USER_SEARCH_MIN_LENGTH,

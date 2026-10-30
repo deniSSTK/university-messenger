@@ -62,5 +62,4 @@ backend/prisma/schema.d.ts
 backend/prisma/schema.json
 
 backend/generated/prisma/
-backend/src/generated/prisma/
-backend/src/generated/message-shards/
+backend/src/generated/

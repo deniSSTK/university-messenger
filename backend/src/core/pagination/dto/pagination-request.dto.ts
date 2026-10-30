@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsInt, Max, Min } from 'class-validator';
-import { toDecimalInteger } from '../../../utils/number.transforms.js';
+import { toDecimalInteger } from '../../../common/utils/number.transforms.js';
 import {
   PAGINATION_DEFAULT_PAGE,
   PAGINATION_DEFAULT_LIMIT,
