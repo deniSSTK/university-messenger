@@ -1,0 +1,3 @@
+const DATABASE_CONFIG = Symbol('DATABASE_CONFIG');
+
+export { DATABASE_CONFIG };

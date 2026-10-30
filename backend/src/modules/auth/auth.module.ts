@@ -56,7 +56,7 @@ import { PasswordService } from './service/password.service.js';
     AccessTokenGuard,
     AuthOriginGuard,
   ],
-  exports: [AccessTokenGuard, AuthService],
+  exports: [AccessTokenGuard, AuthService, JwtModule],
 })
 class AuthModule {}
 

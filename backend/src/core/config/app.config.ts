@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { readMessageStorageConfig } from './message-storage.config.js';
 import {
   readDatabaseConfig,
   readPort,
@@ -8,6 +9,7 @@ import {
 
 @Injectable()
 class AppConfig {
+  readonly messageStorage = readMessageStorageConfig();
   readonly accessTokenTtl = readPositiveInteger('JWT_ACCESS_TOKEN_TTL');
   readonly sessionTtl = readPositiveInteger('JWT_SESSION_TTL');
   readonly port = readPort('PORT', 3000);
