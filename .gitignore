@@ -2,6 +2,7 @@
 dist/
 node_modules/
 build/
+*.tsbuildinfo
 
 # Logs
 logs
@@ -61,6 +62,7 @@ backend/prisma/schema.d.ts
 backend/prisma/schema.json
 
 backend/generated/prisma/
+backend/src/generated/prisma/
 
 .vscode/
 generated/
