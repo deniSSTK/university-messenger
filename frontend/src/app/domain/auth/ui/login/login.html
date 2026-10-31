@@ -1,5 +1,5 @@
 <div class="login-container">
-  <h2>Вход</h2>
+  <h2>Log in</h2>
 
   <form [formGroup]="loginForm" (ngSubmit)="onSubmit()">
     <div class="form-group">
@@ -9,34 +9,34 @@
       @if (loginForm.get('email')?.invalid && loginForm.get('email')?.touched) {
         <div class="error-messages">
           @if (loginForm.get('email')?.errors?.['required']) {
-            <small>Email обязателен.</small>
+            <small>Email is required.</small>
           }
           @if (loginForm.get('email')?.errors?.['email']) {
-            <small>Введите корректный email.</small>
+            <small>Enter a valid email address.</small>
           }
         </div>
       }
     </div>
 
     <div class="form-group">
-      <label>Пароль</label>
+      <label>Password</label>
       <input type="password" formControlName="password">
 
       @if (loginForm.get('password')?.invalid && loginForm.get('password')?.touched) {
         <div class="error-messages">
           @if (loginForm.get('password')?.errors?.['required']) {
-            <small>Пароль обязателен.</small>
+            <small>Password is required.</small>
           }
           @if (loginForm.get('password')?.errors?.['minlength']) {
-            <small>Минимум 6 символов.</small>
+            <small>Enter at least 6 characters.</small>
           }
         </div>
       }
     </div>
 
     <button type="submit" [disabled]="loginForm.invalid || isLoading">
-      {{ isLoading ? 'Вход...' : 'Войти' }}
+      {{ isLoading ? 'Logging in...' : 'Log in' }}
     </button>
   </form>
-  <a class="nav-link" href="/register">Нет аккаунта? Создать</a>
+  <a class="nav-link" href="/register">Don't have an account? Create one</a>
 </div>
