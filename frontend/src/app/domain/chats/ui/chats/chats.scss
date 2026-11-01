@@ -2,7 +2,7 @@
 
 .chat-layout {
   display: flex;
-  height: 100vh;
+  height: 100dvh;
   width: 100vw;
   background-color: $bg-white;
 }
@@ -10,7 +10,7 @@
 .sidebar {
   width: 33.33%;
   max-width: 420px;
-  min-width: 320px;
+  min-width: min(320px, 100vw);
   border-right: $border-width-main solid $border-light;
   display: flex;
   flex-direction: column;
@@ -33,6 +33,7 @@
 
 .search-input {
   flex: 1;
+  min-width: 0;
   background: $bg-light;
   border: none;
   border-radius: 22px;
@@ -77,8 +78,12 @@
   flex-shrink: 0;
 }
 
-.avatar.blue { background-color: $avatar-blue; }
-.avatar.purple { background-color: $avatar-purple; }
+.avatar.blue {
+  background-color: $avatar-blue;
+}
+.avatar.purple {
+  background-color: $avatar-purple;
+}
 
 .chat-info {
   flex: 1;

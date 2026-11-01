@@ -55,7 +55,7 @@ The core version includes direct conversations only. Group chats, channels, call
 | Backend           | TypeScript, Node.js, NestJS - API and server logic         | Auth API and Swagger implemented |
 | Database          | PostgreSQL, Prisma - data storage and migrations           | Configuration prepared       |
 | Local Environment | Docker Compose - local PostgreSQL                          | Prepared                     |
-| Frontend          | Angular, TypeScript - responsive web interface             | Planned                      |
+| Frontend          | Angular, TypeScript - responsive web interface             | Auth UI and session handling implemented |
 | Messaging         | WebSocket - real-time messages and conversation events     | Planned                      |
 | Testing           | Jest, Supertest - unit and end-to-end tests                | Auth unit, HTTP, and database scenarios |
 | CI/CD             | GitHub Actions - checks, builds, and deployment automation | Planned                      |
@@ -78,13 +78,13 @@ Authentication and conversation membership checks must be enforced on the server
 │   ├── test/             # End-to-end tests
 │   ├── .env.example      # Example environment variables
 │   └── docker-compose.yml
-├── frontend/             # Angular client application (planned)
+├── frontend/             # Angular client: auth forms, session handling, chats placeholder
 ├── AGENTS.md             # Repository-wide development rules
 ├── LICENSE
 └── README.md
 ```
 
-The backend and frontend share a single repository. Install dependencies and run commands from each application's directory. The `frontend/` directory currently contains only a placeholder file; the client application will be added separately.
+The backend and frontend share a single repository. Install dependencies and run commands from each application's directory. The Angular client is in `frontend/`; see [frontend setup and API configuration](frontend/README.md).
 
 ## Backend Module Structure
 
@@ -122,7 +122,7 @@ It is a private helper shared by register, login, and refresh.
 
 ## Running the Backend Locally
 
-These instructions cover the current repository contents. Frontend setup instructions will be added once the client application is available.
+For the Angular client, run `npm ci` and `npm start` from `frontend/` using Node.js 24.20.0. Open `http://localhost:4200`; configure the API URL in the frontend environment files and keep the backend `FRONTEND_ORIGIN` aligned. See [frontend/README.md](frontend/README.md) for details.
 
 ### Requirements
 

@@ -11,18 +11,16 @@ describe('PrismaAuthRepository', () => {
     passwordHash: 'hash',
   };
   let database: {
-    user: { create: jest.Mock };
+    user: { create: jest.Mock; findFirst: jest.Mock };
     userSession: { findFirst: jest.Mock; updateMany: jest.Mock };
-    $queryRaw: jest.Mock;
     $transaction: jest.Mock;
   };
   let repository: PrismaAuthRepository;
 
   beforeEach(() => {
     database = {
-      user: { create: jest.fn() },
+      user: { create: jest.fn(), findFirst: jest.fn().mockResolvedValue(null) },
       userSession: { findFirst: jest.fn(), updateMany: jest.fn() },
-      $queryRaw: jest.fn().mockResolvedValue([]),
       $transaction: jest.fn(),
     };
     repository = new PrismaAuthRepository(database as unknown as PrismaService);
@@ -49,23 +47,24 @@ describe('PrismaAuthRepository', () => {
     );
   });
 
-  it('compares email using a parameterized LOWER query', async () => {
+  it('looks up emails case-insensitively through the configured Prisma schema', async () => {
     await expect(repository.findUserByEmail(input.email)).resolves.toBeNull();
 
-    const [query, email] = database.$queryRaw.mock.calls[0] as [
-      TemplateStringsArray,
-      string,
+    const [args] = database.user.findFirst.mock.calls[0] as [
+      Prisma.UserFindFirstArgs,
     ];
 
-    expect(query.join('?')).toContain('LOWER("email") = LOWER(?)');
-    expect(email).toBe(input.email);
+    expect(args.where).toEqual({
+      email: { equals: input.email, mode: 'insensitive' },
+    });
+    expect(args.select).toMatchObject({ passwordHash: true, deletedAt: true });
   });
 
   it('uses the transaction client for operations inside a transaction', async () => {
-    const transactionQuery = jest.fn().mockResolvedValue([]);
+    const transactionQuery = jest.fn().mockResolvedValue(null);
     database.$transaction.mockImplementation(
       (operation: (client: unknown) => unknown) =>
-        operation({ $queryRaw: transactionQuery }),
+        operation({ user: { findFirst: transactionQuery } }),
     );
 
     await repository.transaction((transaction) =>
@@ -73,7 +72,7 @@ describe('PrismaAuthRepository', () => {
     );
 
     expect(transactionQuery).toHaveBeenCalledTimes(1);
-    expect(database.$queryRaw).not.toHaveBeenCalled();
+    expect(database.user.findFirst).not.toHaveBeenCalled();
   });
 
   it('preserves all active-session restrictions', async () => {

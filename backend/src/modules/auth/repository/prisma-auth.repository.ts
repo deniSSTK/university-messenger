@@ -48,15 +48,18 @@ class PrismaAuthRepositoryOperations implements AuthRepositoryOperations {
     }
   }
 
-  async findUserByEmail(email: string): Promise<AuthUser | null> {
-    const users = await this.database.$queryRaw<AuthUser[]>`
-      SELECT "id", "email", "username", "displayName", "createdAt", "updatedAt", "passwordHash", "deletedAt"
-      FROM "User"
-      WHERE LOWER("email") = LOWER(${email})
-      LIMIT 1
-    `;
+  findUserByEmail(email: string): Promise<AuthUser | null> {
+    // Prisma implements insensitive equality with ILIKE; escape its pattern syntax.
+    const literalEmail = email.replace(/[\\%_]/g, '\\$&');
 
-    return users[0] ?? null;
+    return this.database.user.findFirst({
+      where: { email: { equals: literalEmail, mode: 'insensitive' } },
+      select: {
+        ...publicUserSelect,
+        passwordHash: true,
+        deletedAt: true,
+      },
+    });
   }
 
   findActiveUser(userId: string): Promise<PublicUser | null> {
