@@ -4,8 +4,8 @@ import {
   HttpErrorResponse,
   HttpHeaders,
 } from '@angular/common/http';
-import { Observable, throwError, BehaviorSubject } from 'rxjs';
-import { catchError, switchMap, filter, take, finalize, tap } from 'rxjs/operators';
+import { Observable, defer, from, of, throwError } from 'rxjs';
+import { catchError, switchMap } from 'rxjs/operators';
 import type { HttpRequestOptions } from './http.types';
 import { SessionService } from './session.service';
 import { environment } from '../../../environments/environment';
@@ -14,8 +14,6 @@ import { environment } from '../../../environments/environment';
 class HttpClient {
   private angularHttp = inject(AngularHttpClient);
   private session = inject(SessionService);
-  private isRefreshing = false;
-  private refreshState = new BehaviorSubject<RefreshState>({ status: 'idle' });
 
   get<T>(url: string, options?: HttpRequestOptions): Observable<T> {
     return this.request<T>('GET', url, null, options);
@@ -41,141 +39,73 @@ class HttpClient {
     method: string,
     url: string,
     body: unknown,
-    options?: HttpRequestOptions,
-    retryCount: number = 0,
+    options: HttpRequestOptions = {},
   ): Observable<T> {
-    const isPrivate = options?.isPrivate !== false;
-    const shouldAuthenticate = isPrivate && this.isApiOrigin(url);
-    const angularOptions: HttpRequestOptions = { ...options };
-    delete angularOptions.isPrivate;
+    const { isPrivate = true, ...transportOptions } = options;
+    const authenticate = isPrivate && this.isApiUrl(url);
+    let retries = 0;
 
-    if (shouldAuthenticate && this.isRefreshing) {
-      return this.waitForRefreshAndRetry<T>(method, url, body, options, retryCount);
-    }
+    const send = (): Observable<T> =>
+      defer(() => {
+        const pending = authenticate ? this.session.getPendingRefresh() : null;
+        const ready: Observable<string | null> = pending ? from(pending) : of(null);
 
-    const accessToken = shouldAuthenticate ? this.session.getAccessToken() : null;
+        return ready.pipe(
+          switchMap(() => {
+            const token = authenticate ? this.session.getAccessToken() : null;
+            let headers =
+              transportOptions.headers instanceof HttpHeaders
+                ? transportOptions.headers
+                : new HttpHeaders(transportOptions.headers);
 
-    if (accessToken) {
-      const headers =
-        angularOptions.headers instanceof HttpHeaders
-          ? angularOptions.headers
-          : new HttpHeaders(angularOptions.headers);
-      angularOptions.headers = headers.set('Authorization', `Bearer ${accessToken}`);
-    }
+            if (token) {
+              headers = headers.set('Authorization', `Bearer ${token}`);
+            }
 
-    return (
-      this.angularHttp.request<T>(method, url, {
-        body,
-        observe: 'body',
-        ...angularOptions,
-      }) as Observable<T>
-    ).pipe(
-      catchError((error: HttpErrorResponse) => {
-        if (error.status === 401 && shouldAuthenticate && retryCount < 3) {
-          return this.handle401Error<T>(method, url, body, options, retryCount, accessToken);
-        }
-        return throwError(() => error);
-      }),
-    );
+            return this.angularHttp
+              .request<T>(method, url, { ...transportOptions, headers, body })
+              .pipe(
+                catchError((error: unknown) => {
+                  if (
+                    !(error instanceof HttpErrorResponse) ||
+                    error.status !== 401 ||
+                    !authenticate ||
+                    retries >= 3
+                  ) {
+                    return throwError(() => error);
+                  }
+
+                  retries += 1;
+                  const currentToken = this.session.getAccessToken();
+
+                  if (currentToken && currentToken !== token) {
+                    return send();
+                  }
+
+                  return from(this.session.refresh()).pipe(switchMap(() => send()));
+                }),
+              );
+          }),
+        );
+      });
+
+    return send();
   }
 
-  private isApiOrigin(url: string): boolean {
+  private isApiUrl(url: string): boolean {
     try {
       const requestUrl = new URL(url, globalThis.location?.href);
-      const apiUrl = new URL(environment.apiUrl);
+      const apiUrl = new URL(environment.apiUrl, globalThis.location?.href);
+      const apiPath = apiUrl.pathname.replace(/\/$/, '');
 
-      return requestUrl.origin === apiUrl.origin;
+      return (
+        requestUrl.origin === apiUrl.origin &&
+        (requestUrl.pathname === apiPath || requestUrl.pathname.startsWith(`${apiPath}/`))
+      );
     } catch {
       return false;
     }
   }
-
-  private handle401Error<T>(
-    method: string,
-    url: string,
-    body: unknown,
-    options?: HttpRequestOptions,
-    retryCount: number = 0,
-    tokenUsed: string | null = null,
-  ): Observable<T> {
-    const currentToken = this.session.getAccessToken();
-
-    if (currentToken && currentToken !== tokenUsed) {
-      return this.request<T>(method, url, body, options, retryCount + 1);
-    }
-
-    if (!this.isRefreshing) {
-      this.isRefreshing = true;
-      this.refreshState.next({ status: 'pending' });
-
-      const refresh$ = this.angularHttp
-        .post<{ accessToken: string }>(
-          `${environment.apiUrl}/auth/refresh`,
-          {},
-          {
-            withCredentials: true,
-          },
-        )
-        .pipe(
-          tap((response) => {
-            this.session.setTokens(response.accessToken);
-            this.isRefreshing = false;
-            this.refreshState.next({
-              status: 'success',
-              accessToken: response.accessToken,
-            });
-          }),
-          catchError((error: unknown) => {
-            if (error instanceof HttpErrorResponse && error.status === 401) {
-              this.session.clearAndRedirect();
-            }
-            this.refreshState.next({ status: 'failure', error });
-            return throwError(() => error);
-          }),
-          finalize(() => {
-            this.isRefreshing = false;
-          }),
-        );
-
-      return refresh$.pipe(
-        switchMap(() => this.request<T>(method, url, body, options, retryCount + 1)),
-      );
-    } else {
-      return this.waitForRefreshAndRetry<T>(method, url, body, options, retryCount);
-    }
-  }
-
-  private waitForRefreshAndRetry<T>(
-    method: string,
-    url: string,
-    body: unknown,
-    options?: HttpRequestOptions,
-    retryCount: number = 0,
-  ): Observable<T> {
-    return this.refreshState.pipe(
-      filter(isRefreshComplete),
-      take(1),
-      switchMap((state) => {
-        if (state.status === 'failure') {
-          return throwError(() => state.error);
-        }
-
-        return this.request<T>(method, url, body, options, retryCount + 1);
-      }),
-    );
-  }
-}
-
-type RefreshState =
-  | { status: 'idle' }
-  | { status: 'pending' }
-  | { status: 'success'; accessToken: string }
-  | { status: 'failure'; error: unknown };
-
-type RefreshCompletion = Extract<RefreshState, { status: 'success' | 'failure' }>;
-
-function isRefreshComplete(state: RefreshState): state is RefreshCompletion {
-  return state.status === 'success' || state.status === 'failure';
 }
 
 export { HttpClient };

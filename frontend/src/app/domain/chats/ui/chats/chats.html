@@ -2,7 +2,7 @@
   <aside class="sidebar">
     <div class="sidebar-header">
       <div class="menu-icon">☰</div>
-      <input type="text" placeholder="Поиск" class="search-input">
+      <input type="text" placeholder="Поиск" class="search-input" />
     </div>
 
     <ul class="chat-list">
@@ -28,7 +28,12 @@
       </li>
     </ul>
 
-    <button class="logout-btn" (click)="logout()">Exit from account</button>
+    @if (errorMessage()) {
+      <p role="alert">{{ errorMessage() }}</p>
+    }
+    <button class="logout-btn" [disabled]="isLoggingOut()" (click)="logout()">
+      {{ isLoggingOut() ? 'Logging out...' : 'Exit from account' }}
+    </button>
   </aside>
 
   <main class="chat-area">

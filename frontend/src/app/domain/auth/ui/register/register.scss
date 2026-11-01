@@ -3,22 +3,24 @@
 :host {
   display: flex;
   justify-content: center;
-  align-items: center;
-  min-height: 100vh;
+  align-items: flex-start;
+  min-height: 100dvh;
   padding: $spacing-xl;
 }
 
-.login-container, .register-container {
+.login-container,
+.register-container {
   background: $bg-white;
   width: 100%;
   max-width: 360px;
   border-radius: $border-radius-md;
-  padding: $spacing-xxl;
+  padding: clamp(16px, 5vw, 32px);
+  margin-block: auto;
   box-shadow: $box-shadow-main;
   text-align: center;
 }
 
-h2 {
+h1 {
   margin-bottom: $spacing-xl;
   font-weight: 500;
   font-size: $font-size-xl;
@@ -90,4 +92,16 @@ button:disabled {
 
 .nav-link:hover {
   text-decoration: underline;
+}
+
+.api-error {
+  color: $error-color;
+  text-align: left;
+  margin-block: $spacing-md;
+}
+
+@media (max-width: 400px) {
+  :host {
+    padding: 12px;
+  }
 }

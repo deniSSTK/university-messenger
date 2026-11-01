@@ -12,4 +12,6 @@ interface AuthResult {
   accessToken: string;
 }
 
-export type { AuthResult, LoginInput, RegisterInput };
+type AuthErrorCode = 'credentials' | 'conflict' | 'validation' | 'unavailable' | 'forbidden' | 'unknown';
+
+export type { AuthErrorCode, AuthResult, LoginInput, RegisterInput };

@@ -286,6 +286,30 @@ describeDatabase('Auth API (PostgreSQL)', () => {
     expect(missing.body).toEqual(wrong.body);
   });
 
+  it('treats email wildcard characters literally during login', async () => {
+    await register();
+
+    for (const email of ['a_ice@example.com', 'a%ice@example.com']) {
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email, password: payload.password })
+        .expect(401);
+    }
+  });
+
+  it('can register and log in with literal email wildcard characters', async () => {
+    const email = 'Alice_Test%tag@example.com';
+    await request(app.getHttpServer())
+      .post('/auth/register')
+      .send({ ...payload, email })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: email.toUpperCase(), password: payload.password })
+      .expect(200);
+  });
+
   it('rotates the refresh token and rejects reuse of the old token', async () => {
     const registered = await register();
     const oldCookie = refreshCookie(registered);
