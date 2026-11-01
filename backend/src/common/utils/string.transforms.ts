@@ -8,4 +8,16 @@ const trimString = ({ value }: StringTransformInput) =>
 const trimAndLowercase = ({ value }: StringTransformInput) =>
   typeof value === 'string' ? value.trim().toLowerCase() : value;
 
-export { trimString, trimAndLowercase };
+function trimLowercaseAndRemovePrefix(prefix: string) {
+  return (input: StringTransformInput): unknown => {
+    const value = trimAndLowercase(input);
+
+    if (typeof value !== 'string') {
+      return value;
+    }
+
+    return value.startsWith(prefix) ? value.slice(prefix.length) : value;
+  };
+}
+
+export { trimString, trimAndLowercase, trimLowercaseAndRemovePrefix };
