@@ -6,7 +6,7 @@ The messenger is being developed as a university semester project. The team's go
 
 ## Current Status
 
-The backend foundation, authentication API, and user search API are implemented in `main`. The Angular client is implemented in the local `frontend/login-register` branch and has not yet been merged into `main`. Direct conversations and messaging are still planned.
+The backend foundation, authentication API, user search API, and Angular authentication client are implemented in `main`. Direct conversations and messaging are still planned.
 
 Completed:
 
@@ -15,12 +15,12 @@ Completed:
 - Registration, login, refresh token rotation, logout, and current-user endpoints, with password hashing, session checks, and HttpOnly refresh cookies.
 - Protected user search by username prefix, with pagination and exclusion of the current user and deleted accounts.
 - Auth unit tests, HTTP and Swagger tests, and PostgreSQL integration scenarios. Database tests require `TEST_DATABASE_URL`.
-- In `frontend/login-register`: Angular registration and login forms connected to the API, validation and error messages, logout, in-memory access tokens, cookie-based session restoration, shared token refresh/retries, and a protected `/chats` route.
-- In `frontend/login-register`: responsive auth forms and a chat layout prototype, plus unit tests for forms, auth API adapters, route protection, session restoration, logout, and concurrent refresh handling. The chat list is static sample data and the search field is not connected to the API.
+- Angular registration and login forms connected to the API, validation and error messages, logout, in-memory access tokens, cookie-based session restoration, shared token refresh/retries, and a protected `/chats` route.
+- Responsive auth forms and a chat layout prototype, plus unit tests for forms, auth API adapters, route protection, session restoration, logout, and concurrent refresh handling. The chat list is static sample data and the search field is not connected to the API.
 
-Still planned: merging the frontend branch, connecting frontend user search, working chat/message screens, profile editing and avatars, direct conversation and message APIs, real-time delivery, message editing and deletion, read receipts, unread counts, typing indicators, CI/CD, and deployment. Backend user search test coverage also remains to be added.
+Still planned: connecting frontend user search, working chat/message screens, profile editing and avatars, direct conversation and message APIs, real-time delivery, message editing and deletion, read receipts, unread counts, typing indicators, CI/CD, and deployment. Backend user search test coverage also remains to be added.
 
-The next two implementation tasks are described in Ukrainian in [Backend: direct conversations and messages](tasks/backend-direct-messaging.md) and [Frontend: user search and messaging interface](tasks/frontend-messenger.md).
+The next implementation areas are the backend API for direct conversations and messages, including a chat membership guard, and the frontend user search and messaging interface connected to that API.
 
 ## Core Features
 
@@ -75,10 +75,10 @@ The core version includes direct conversations only. Group chats, channels, call
 | Backend           | TypeScript, Node.js, NestJS - API and server logic         | Auth, user search, and Swagger implemented |
 | Database          | PostgreSQL, Prisma - data storage and migrations           | Models, migrations, and user search index implemented |
 | Local Environment | Docker Compose - local PostgreSQL                          | Prepared                     |
-| Frontend          | Angular, TypeScript - responsive web interface             | Auth and chat layout prototype in `frontend/login-register`; not merged |
+| Frontend          | Angular, TypeScript - responsive web interface             | Auth API integration and responsive chat layout prototype implemented |
 | Messaging         | WebSocket - real-time messages and conversation events     | Planned                      |
 | Testing           | Jest, Supertest - unit and end-to-end tests                | Auth unit, HTTP, and database scenarios |
-| Frontend Testing  | Vitest, Angular HTTP testing utilities                    | Auth, forms, guards, and refresh tests in frontend branch |
+| Frontend Testing  | Vitest, Angular HTTP testing utilities                    | Auth, forms, guards, and refresh tests implemented |
 | CI/CD             | GitHub Actions - checks, builds, and deployment automation | Planned                      |
 
 The Angular frontend will use the backend HTTP API for accounts, profiles, conversation lists, and message history. A WebSocket connection will deliver new messages, read receipts, and typing events. PostgreSQL will store users, conversations, and messages.
@@ -99,14 +99,17 @@ Authentication and conversation membership checks must be enforced on the server
 │   ├── test/             # End-to-end tests
 │   ├── .env.example      # Example environment variables
 │   └── docker-compose.yml
-├── frontend/             # Placeholder in main; Angular app in frontend/login-register
-├── tasks/                # Implementation tasks in Ukrainian
+├── frontend/             # Angular client with auth and a chat layout prototype
+│   ├── src/app/core/     # Shared HTTP client, session handling, and route guards
+│   ├── src/app/domain/   # Auth feature and chat UI prototype
+│   ├── src/environments/ # Development and production API configuration
+│   └── README.md         # Frontend setup and authentication details
 ├── AGENTS.md             # Repository-wide development rules
 ├── LICENSE
 └── README.md
 ```
 
-The backend and frontend share a single repository. Install dependencies and run commands from each application's directory. In `main`, `frontend/` contains only a tracked placeholder. The Angular source, package scripts, environment files, and frontend README are available in `frontend/login-register`.
+The backend and frontend share a single repository and are both available in `main`. Install dependencies and run commands from each application's directory. See [frontend/README.md](frontend/README.md) for additional client setup and authentication details.
 
 ## Backend Module Structure
 
@@ -144,7 +147,7 @@ It is a private helper shared by register, login, and refresh.
 
 ## Running the Backend Locally
 
-These instructions cover the backend in `main`. Frontend instructions below apply to `frontend/login-register`.
+These instructions cover the backend. Frontend startup instructions follow below.
 
 ### Requirements
 
@@ -314,11 +317,12 @@ Database data persists in a Docker volume between runs.
 
 ## Running the Frontend Locally
 
-The Angular application currently lives in `frontend/login-register`. Use that branch in a checkout with your local changes saved before switching; these commands require its frontend source files.
+The Angular application is available in `frontend/` on `main`.
 
-From `frontend/`, using Node.js `24.20.0`:
+From the repository root, using Node.js `24.20.0`:
 
 ```bash
+cd frontend
 npm ci
 npm start
 ```
@@ -332,15 +336,15 @@ and `frontend/src/environments/environment.ts` for production. The backend's `FR
 must match the frontend origin. Use `localhost` for both services locally so refresh cookies work.
 Access tokens stay in memory; session restoration uses the backend's HttpOnly cookie.
 
-Frontend checks, from `frontend/` on that branch:
+Frontend checks, from `frontend/`:
 
 ```bash
 npm run build
 npm test -- --watch=false
 ```
 
-Frontend tests mock HTTP requests and do not require PostgreSQL. Their presence is recorded here;
-this documentation update does not claim a new successful build or test run of the frontend branch.
+Frontend tests mock HTTP requests and do not require PostgreSQL. Use the documented Node.js version:
+Node.js `22.19.0` is below the Angular CLI minimum and cannot run the frontend build or test commands.
 
 ## Deployment and Quality
 
@@ -359,9 +363,9 @@ Key testing scenarios include registration and sign-in, access restricted to a u
 - [x] Document auth and user search endpoints in Swagger.
 - [x] Implement user search by username prefix with pagination.
 - [x] Add auth unit tests, HTTP/Swagger tests, and PostgreSQL integration scenarios.
-- [x] Implement Angular registration, login, logout, session restoration, and protected routing in `frontend/login-register`.
-- [x] Add a responsive chat layout prototype and frontend auth/session tests in `frontend/login-register`.
-- [ ] Merge `frontend/login-register` into `main` after review and checks.
+- [x] Implement Angular registration, login, logout, session restoration, and protected routing.
+- [x] Add a responsive chat layout prototype and frontend auth/session tests.
+- [x] Merge the Angular authentication client into `main`.
 - [ ] Connect frontend user search to the existing API.
 - [ ] Implement profile editing.
 - [ ] Implement direct conversations.
