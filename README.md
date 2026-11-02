@@ -4,7 +4,27 @@ A full stack web messenger for direct communication. Users will be able to find 
 
 The messenger is being developed as a university semester project. The team's goal is to complete the full development cycle: interface and API design, implementation, testing, automated builds, and server deployment.
 
+## Current Status
+
+The backend foundation, authentication API, and user search API are implemented in `main`. The Angular client is implemented in the local `frontend/login-register` branch and has not yet been merged into `main`. Direct conversations and messaging are still planned.
+
+Completed:
+
+- NestJS backend with typed environment validation, request validation, and Swagger documentation.
+- PostgreSQL configuration through Docker Compose, Prisma models for users, sessions, chats, and messages, and database migrations, including a username prefix search index.
+- Registration, login, refresh token rotation, logout, and current-user endpoints, with password hashing, session checks, and HttpOnly refresh cookies.
+- Protected user search by username prefix, with pagination and exclusion of the current user and deleted accounts.
+- Auth unit tests, HTTP and Swagger tests, and PostgreSQL integration scenarios. Database tests require `TEST_DATABASE_URL`.
+- In `frontend/login-register`: Angular registration and login forms connected to the API, validation and error messages, logout, in-memory access tokens, cookie-based session restoration, shared token refresh/retries, and a protected `/chats` route.
+- In `frontend/login-register`: responsive auth forms and a chat layout prototype, plus unit tests for forms, auth API adapters, route protection, session restoration, logout, and concurrent refresh handling. The chat list is static sample data and the search field is not connected to the API.
+
+Still planned: merging the frontend branch, connecting frontend user search, working chat/message screens, profile editing and avatars, direct conversation and message APIs, real-time delivery, message editing and deletion, read receipts, unread counts, typing indicators, CI/CD, and deployment. Backend user search test coverage also remains to be added.
+
+The next two implementation tasks are described in Ukrainian in [Backend: direct conversations and messages](tasks/backend-direct-messaging.md) and [Frontend: user search and messaging interface](tasks/frontend-messenger.md).
+
 ## Core Features
+
+The following sections describe the target scope; see Current Status and Development Roadmap for implementation progress.
 
 ### Account and Profile
 
@@ -52,12 +72,13 @@ The core version includes direct conversations only. Group chats, channels, call
 
 | Component         | Technologies and Purpose                                   | Status                       |
 | ----------------- | ---------------------------------------------------------- | ---------------------------- |
-| Backend           | TypeScript, Node.js, NestJS - API and server logic         | Auth API and Swagger implemented |
-| Database          | PostgreSQL, Prisma - data storage and migrations           | Configuration prepared       |
+| Backend           | TypeScript, Node.js, NestJS - API and server logic         | Auth, user search, and Swagger implemented |
+| Database          | PostgreSQL, Prisma - data storage and migrations           | Models, migrations, and user search index implemented |
 | Local Environment | Docker Compose - local PostgreSQL                          | Prepared                     |
-| Frontend          | Angular, TypeScript - responsive web interface             | Auth UI and session handling implemented |
+| Frontend          | Angular, TypeScript - responsive web interface             | Auth and chat layout prototype in `frontend/login-register`; not merged |
 | Messaging         | WebSocket - real-time messages and conversation events     | Planned                      |
 | Testing           | Jest, Supertest - unit and end-to-end tests                | Auth unit, HTTP, and database scenarios |
+| Frontend Testing  | Vitest, Angular HTTP testing utilities                    | Auth, forms, guards, and refresh tests in frontend branch |
 | CI/CD             | GitHub Actions - checks, builds, and deployment automation | Planned                      |
 
 The Angular frontend will use the backend HTTP API for accounts, profiles, conversation lists, and message history. A WebSocket connection will deliver new messages, read receipts, and typing events. PostgreSQL will store users, conversations, and messages.
@@ -72,19 +93,20 @@ Authentication and conversation membership checks must be enforced on the server
 │   ├── prisma/           # Database schema and migrations
 │   ├── src/              # Backend source code
 │   │   ├── common/       # Shared utilities
-│   │   ├── core/config/  # Typed environment configuration and validation
-│   │   ├── modules/      # Feature modules, starting with auth
+│   │   ├── core/         # Typed configuration and shared pagination DTOs
+│   │   ├── modules/      # Auth and users feature modules
 │   │   └── prisma/       # Prisma client lifecycle and dependency injection
 │   ├── test/             # End-to-end tests
 │   ├── .env.example      # Example environment variables
 │   └── docker-compose.yml
-├── frontend/             # Angular client: auth forms, session handling, chats placeholder
+├── frontend/             # Placeholder in main; Angular app in frontend/login-register
+├── tasks/                # Implementation tasks in Ukrainian
 ├── AGENTS.md             # Repository-wide development rules
 ├── LICENSE
 └── README.md
 ```
 
-The backend and frontend share a single repository. Install dependencies and run commands from each application's directory. The Angular client is in `frontend/`; see [frontend setup and API configuration](frontend/README.md).
+The backend and frontend share a single repository. Install dependencies and run commands from each application's directory. In `main`, `frontend/` contains only a tracked placeholder. The Angular source, package scripts, environment files, and frontend README are available in `frontend/login-register`.
 
 ## Backend Module Structure
 
@@ -122,7 +144,7 @@ It is a private helper shared by register, login, and refresh.
 
 ## Running the Backend Locally
 
-For the Angular client, run `npm ci` and `npm start` from `frontend/` using Node.js 24.20.0. Open `http://localhost:4200`; configure the API URL in the frontend environment files and keep the backend `FRONTEND_ORIGIN` aligned. See [frontend/README.md](frontend/README.md) for details.
+These instructions cover the backend in `main`. Frontend instructions below apply to `frontend/login-register`.
 
 ### Requirements
 
@@ -175,7 +197,7 @@ cd backend
    ```
 
 By default, the server listens at `http://localhost:3000`, and PostgreSQL is available at `localhost:6012`.
-Authentication endpoints are available under `/auth`; the messaging API is planned. The root `/` has no endpoint.
+Authentication endpoints are available under `/auth`, and user search is available at `GET /users`; the messaging API is planned. The root `/` has no endpoint.
 
 ### Environment Configuration
 
@@ -228,6 +250,22 @@ Validation errors return `400`, invalid credentials or tokens return `401`, untr
 origins return `403` for auth POST requests, and duplicate email or username returns `409`.
 Field restrictions and schemas are available in Swagger.
 
+### User Search API
+
+`GET /users?search=alice&page=1&limit=20` requires `Authorization: Bearer <accessToken>`.
+It searches by username prefix, ignoring case. The required `search` value is trimmed,
+lowercased, and may start with one optional `@`; after normalization it must contain
+1–32 letters, digits, or underscores.
+
+Pagination defaults to `page=1` and `limit=20`. Page numbers range from 1 to 1,000,000,
+and limits range from 1 to 100. Results exclude the current user and deleted accounts
+and are sorted by username, then id, ascending.
+
+The response is `{ items, meta: { page, limit, total, totalPages } }`, where each item
+contains only `id`, `username`, and `displayName`. Empty results and out-of-range pages
+return `200` with an empty `items` array. Invalid or unexpected query parameters return
+`400`; missing or invalid authentication returns `401`.
+
 ### Testing
 
 Generate Prisma Client before running checks. Service unit tests mock domain ports;
@@ -274,6 +312,36 @@ Database data persists in a Docker volume between runs.
 | `npm run migrate:new -- --name <name>` | Create a migration without applying it; starts the local database |
 | `npm run migrate:apply`                | Apply existing migrations                                         |
 
+## Running the Frontend Locally
+
+The Angular application currently lives in `frontend/login-register`. Use that branch in a checkout with your local changes saved before switching; these commands require its frontend source files.
+
+From `frontend/`, using Node.js `24.20.0`:
+
+```bash
+npm ci
+npm start
+```
+
+Open [http://localhost:4200](http://localhost:4200) with the backend running at `http://localhost:3000`.
+The app provides `/login`, `/register`, and a protected `/chats` layout prototype.
+Registration and login call the backend; the chat entries are static examples, and the search input has no API integration yet.
+
+Configure `apiUrl` in `frontend/src/environments/environment.development.ts` for local development
+and `frontend/src/environments/environment.ts` for production. The backend's `FRONTEND_ORIGIN`
+must match the frontend origin. Use `localhost` for both services locally so refresh cookies work.
+Access tokens stay in memory; session restoration uses the backend's HttpOnly cookie.
+
+Frontend checks, from `frontend/` on that branch:
+
+```bash
+npm run build
+npm test -- --watch=false
+```
+
+Frontend tests mock HTTP requests and do not require PostgreSQL. Their presence is recorded here;
+this documentation update does not claim a new successful build or test run of the frontend branch.
+
 ## Deployment and Quality
 
 By the end of the project, the frontend, backend, and PostgreSQL will be deployed on a server, with the application accessible over HTTPS. Data must persist across restarts and application updates. Secrets must be supplied through environment variables.
@@ -288,13 +356,20 @@ Key testing scenarios include registration and sign-in, access restricted to a u
 - [x] Configure Prisma and local PostgreSQL through Docker Compose.
 - [x] Design user, session, conversation, and message models.
 - [x] Implement registration, login, refresh, logout, and current-user endpoints.
+- [x] Document auth and user search endpoints in Swagger.
+- [x] Implement user search by username prefix with pagination.
+- [x] Add auth unit tests, HTTP/Swagger tests, and PostgreSQL integration scenarios.
+- [x] Implement Angular registration, login, logout, session restoration, and protected routing in `frontend/login-register`.
+- [x] Add a responsive chat layout prototype and frontend auth/session tests in `frontend/login-register`.
+- [ ] Merge `frontend/login-register` into `main` after review and checks.
+- [ ] Connect frontend user search to the existing API.
 - [ ] Implement profile editing.
-- [ ] Implement user search and direct conversations.
+- [ ] Implement direct conversations.
 - [ ] Add real-time messaging and conversation history.
 - [ ] Add message editing, deletion, and read receipts.
 - [ ] Add typing indicators and unread message counts.
-- [ ] Build a responsive Angular frontend and connect it to the backend.
-- [ ] Cover key scenarios with tests.
+- [ ] Replace sample chats with real data and implement responsive conversation/history/message screens connected to the backend.
+- [ ] Add user search tests and cover conversation and messaging scenarios as they are implemented.
 - [ ] Configure CI/CD and deploy the application over HTTPS.
 - [ ] Add image and file attachments if time permits.
 

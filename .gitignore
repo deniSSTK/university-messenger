@@ -15,6 +15,7 @@ lerna-debug.log*
 
 # OS
 .DS_Store
+Thumbs.db
 
 # Tests
 coverage/
@@ -36,6 +37,15 @@ coverage/
 !.vscode/launch.json
 !.vscode/extensions.json
 
+# Frontend editor settings (previously scoped by frontend/.gitignore)
+/frontend/.vscode/*
+!/frontend/.vscode/settings.json
+!/frontend/.vscode/tasks.json
+!/frontend/.vscode/launch.json
+!/frontend/.vscode/extensions.json
+!/frontend/.vscode/mcp.json
+/frontend/.history/*
+
 # dotenv environment variable files
 .env
 .env.development.local
@@ -55,14 +65,21 @@ pids
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
-node_modules/
-dist/
-
 backend/prisma/schema.d.ts
 backend/prisma/schema.json
 
 backend/generated/prisma/
-backend/src/generated/
+backend/src/generated/prisma/
+
+# Angular build and tooling artifacts
+/frontend/.angular/
+/frontend/tmp/
+/frontend/out-tsc/
+/frontend/bazel-out/
+/frontend/connect.lock
+/frontend/typings/
+/frontend/**/.sass-cache/
+/frontend/**/__screenshots__/
 
 .vscode/
 generated/
