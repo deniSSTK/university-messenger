@@ -80,3 +80,6 @@ backend/src/generated/prisma/
 /frontend/typings/
 /frontend/**/.sass-cache/
 /frontend/**/__screenshots__/
+
+.vscode/
+generated/

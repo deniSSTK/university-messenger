@@ -46,3 +46,15 @@ These rules apply across the entire repository, including the backend, frontend,
 - Keep Express request/response objects and cookie handling in `delivery/http`. Map HTTP DTOs and request context to explicit service inputs, and map service results to public HTTP responses.
 - Keep auth token response handling local to the auth controller while only its register, login, and refresh endpoints need it. Use descriptive helper names such as `setAuthCookieAndBuildResponse`; send refresh tokens only through HttpOnly cookies.
 - Keep `README.md` aligned with the module layout, environment variable names and units, API behavior, startup steps, and test prerequisites when changing these areas.
+
+# Frontend
+
+- Organize frontend features by domain under `frontend/src/app/domain/<name>/`, with three layers: `ui/`, `service/`, and `repository/`.
+- Follow the dependency flow: UI components call services; services call repository interfaces; repository implementations access HTTP APIs or other data sources. Do not call `HttpClient` directly from UI components or services.
+- Keep forms, presentation state, user interactions, and navigation in `ui/`. Keep business rules and use-case orchestration in `service/`. Keep data access and transport-specific error handling in repository implementations.
+- Define the repository interface and shared, transport-independent repository DTOs in `domain/<name>/repository/`. These DTOs form the common contract between services and repository implementations.
+- Implement the repository interface in an HTTP repository adapter, for example `domain/<name>/repository/http/`. Services must depend on the interface through an Angular injection token; bind the concrete adapter in the domain or application providers.
+- Give each layer its own DTOs: UI form/view DTOs in `ui/`, use-case input/result DTOs in `service/`, and repository input/result DTOs in `repository/`. Do not reuse one layer's DTOs as another layer's contracts.
+- Keep HTTP request/response DTOs separate inside the HTTP repository adapter. Do not expose backend response shapes, `HttpResponse`, or `HttpErrorResponse` through the repository interface.
+- Map DTOs explicitly at each boundary: UI DTOs to service inputs and service results to UI DTOs; service DTOs to repository inputs and repository results to service DTOs; repository DTOs to HTTP requests and HTTP responses to repository DTOs.
+- Keep repository interfaces and shared repository DTOs independent of UI, service implementations, Angular HTTP, and concrete data-access adapters. Translate transport errors into repository contract errors, business failures in services, and user-facing messages in UI.
