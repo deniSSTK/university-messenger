@@ -314,7 +314,7 @@ class Chats {
     } catch (error: unknown) {
       if (this.current(generation, chatId)) {
         this.chatError.set(
-          error instanceof ChatError && error.code === 'missing'
+          error instanceof ChatError && (error.code === 'missing' || error.code === 'validation')
             ? 'Цей чат недоступний або його не існує.'
             : 'Не вдалося завантажити діалог. Спробуйте ще раз.',
         );

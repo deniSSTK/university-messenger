@@ -348,4 +348,10 @@ describe('chat screen', () => {
     component.closeMenus();
     expect(component.accountMenuOpen()).toBe(false);
   });
+  it('shows an obsolete mock URL as an unavailable chat', async () => {
+    api.get.mockRejectedValueOnce(new ChatError('validation'));
+    await select('demo-old-chat');
+    expect(component.chatError()).toContain('недоступний');
+    expect(component.active()).toBeNull();
+  });
 });

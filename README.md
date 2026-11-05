@@ -6,7 +6,7 @@ The messenger is being developed as a university semester project. The team's go
 
 ## Current Status
 
-The backend foundation, authentication API, user search API, and Angular authentication client are implemented in `main`. Direct conversations and messaging are still planned.
+The backend provides authentication, user search, private conversations, and message history/sending APIs. The Angular client uses these HTTP endpoints for user search, conversation lists, and messaging. Real-time delivery remains planned.
 
 Completed:
 
@@ -16,11 +16,11 @@ Completed:
 - Protected user search by username prefix, with pagination and exclusion of the current user and deleted accounts.
 - Auth unit tests, HTTP and Swagger tests, and PostgreSQL integration scenarios. Database tests require `TEST_DATABASE_URL`.
 - Angular registration and login forms connected to the API, validation and error messages, logout, in-memory access tokens, cookie-based session restoration, shared token refresh/retries, and a protected `/chats` route.
-- Responsive auth forms and a chat layout prototype, plus unit tests for forms, auth API adapters, route protection, session restoration, logout, and concurrent refresh handling. The chat list is static sample data and the search field is not connected to the API.
+- Responsive auth forms and a chat layout prototype, plus unit tests for forms, auth API adapters, route protection, session restoration, logout, and concurrent refresh handling. User search, chat lists, conversation details, history, and sends are connected to the real backend through repository adapters.
 
-Still planned: connecting frontend user search, working chat/message screens, profile editing and avatars, direct conversation and message APIs, real-time delivery, message editing and deletion, read receipts, unread counts, typing indicators, CI/CD, and deployment. Backend user search test coverage also remains to be added.
+Still planned: profile editing and avatars, real-time delivery, message editing and deletion, read receipts, unread counts, typing indicators, CI/CD, and deployment. Backend user search test coverage also remains to be added.
 
-The next implementation areas are the backend API for direct conversations and messages, including a chat membership guard, and the frontend user search and messaging interface connected to that API.
+Private conversations are restricted to their members by the backend. Messages become visible after opening or explicitly refreshing a conversation; the client does not simulate live connections or delivery statuses.
 
 ## Core Features
 
@@ -328,7 +328,7 @@ npm start
 ```
 
 Open [http://localhost:4200](http://localhost:4200) with the backend running at `http://localhost:3000`.
-The app provides `/login`, `/register`, and a protected `/chats` layout prototype.
+The app provides `/login`, `/register`, protected `/chats`, and direct conversation URLs at `/chats/:chatId`. Conversation and message data is loaded from PostgreSQL through the backend API.
 Registration and login call the backend; the chat entries are static examples, and the search input has no API integration yet.
 
 Configure `apiUrl` in `frontend/src/environments/environment.development.ts` for local development
@@ -366,13 +366,13 @@ Key testing scenarios include registration and sign-in, access restricted to a u
 - [x] Implement Angular registration, login, logout, session restoration, and protected routing.
 - [x] Add a responsive chat layout prototype and frontend auth/session tests.
 - [x] Merge the Angular authentication client into `main`.
-- [ ] Connect frontend user search to the existing API.
+- [x] Connect frontend user search to the existing API.
 - [ ] Implement profile editing.
-- [ ] Implement direct conversations.
+- [x] Implement direct conversations.
 - [ ] Add real-time messaging and conversation history.
 - [ ] Add message editing, deletion, and read receipts.
 - [ ] Add typing indicators and unread message counts.
-- [ ] Replace sample chats with real data and implement responsive conversation/history/message screens connected to the backend.
+- [x] Replace sample chats with real data and implement responsive conversation/history/message screens connected to the backend.
 - [ ] Add user search tests and cover conversation and messaging scenarios as they are implemented.
 - [ ] Configure CI/CD and deploy the application over HTTPS.
 - [ ] Add image and file attachments if time permits.
@@ -386,3 +386,61 @@ Key testing scenarios include registration and sign-in, access restricted to a u
 | [Syd-Ma](https://github.com/Syd-Ma)           | Developer                        |
 
 The Team Lead coordinates the team, aligns architecture and tasks, reviews code, and contributes to development. Feature implementation, testing, and release preparation are shared across the team.
+
+## Direct messaging HTTP integration
+
+The Angular application binds `CHATS_REPOSITORY` to `ChatsHttpAdapter` in
+`frontend/src/app/app.config.ts`. Requests reuse the existing bearer/refresh client;
+HTTP DTOs remain inside the repository adapter. The browser mock adapter remains
+available for its isolated tests and is not used by application providers. Existing
+mock conversations in browser storage are not read, migrated, or uploaded. Their
+old `demo-*` URLs show the unavailable-chat state; open a recipient from search to
+create or find their real conversation.
+
+| Client operation | Backend request | Response used by the client |
+| --- | --- | --- |
+| Current account | `GET /auth/me` | `id`, `username`, `displayName` |
+| Open or reuse dialog | `POST /chats` with `{ recipientId }` | `id`, `recipient`, `createdAt` |
+| List chats | `GET /chats?page=1&limit=20` | `items` in server order and `meta.totalPages` |
+| Open chat URL | `GET /chats/:chatId` | `recipient` and chat details |
+| Latest/older history | `GET /chats/:chatId/messages?limit=30&cursor=...` | `items`, `nextCursor` |
+| Send | `POST /chats/:chatId/messages` with `{ text }` | The saved server message |
+
+History responses are newest-first; the adapter reverses each page for chronological
+rendering. Cursors are opaque and are passed back unchanged. `403`/`404` responses
+become unavailable-chat errors, validation errors remain validation errors, and
+network/server failures preserve drafts and session state. The shared HTTP client
+continues to coordinate refresh requests.
+
+Search waits 300 ms after typing, accepts a leading `@`, and cancels obsolete requests.
+Chat lists load in pages of 20 and history in pages of 30. Older-history loading keeps
+the viewing position, while refresh fills intermediate pages to the latest already-known
+message. Enter sends, Shift+Enter adds a line, and pending sends cannot be duplicated.
+Drafts are kept separately per account/chat. The sender sees the saved message; the
+recipient sees changes on open or refresh. Mobile shows either the list or the dialog
+with a back action. No messages or tokens are persisted by the frontend in localStorage.
+
+From `frontend/`, run `npm run build` and `npm test -- --watch=false`.
+HTTP integration tests use Angular `HttpTestingController` and cover real endpoint
+paths, request bodies, response mapping/order, cursor paging, errors, shared refresh,
+and the production provider binding. UI regression tests cover races, draft isolation,
+scrolling, retries, and obsolete mock URLs. Existing authentication and session tests
+remain enabled. Backend unit/e2e checks are run from `backend/` as documented above.
+
+Manual integration check, 2026-11-05: the browser restored an existing session,
+searched a temporary backend account with whitespace/`@`/mixed case, created a real
+UUID conversation, and sent a multiline message from Angular. The recipient read
+it through the real API and sent 32 replies. Angular refresh displayed all 33
+messages without gaps; reloading the chat URL restored a 30-message page, and older
+history returned all 33 unique messages. A further reply from the UI was saved.
+Mobile width 390px showed no horizontal overflow, kept the composer visible, and
+returned to the server-backed list using the back button. The independent API
+scenario also checked reusing the same dialog from both participants, outsider
+404 responses, invalid text, refresh, and logout. Only temporary test accounts,
+their conversations/messages, and the separate verification database were removed
+after the checks; existing local accounts were preserved.
+
+Validation: frontend build, TypeScript test checking, and 82 frontend tests pass;
+87 backend unit tests and 37 backend e2e tests pass. Angular reports the existing
+component-style size warning. PostgreSQL connections in the local verification
+run use UTC (`PGOPTIONS=-c timezone=UTC`); use UTC database sessions consistently.
