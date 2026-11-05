@@ -1,9 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { UUID } from '../../../../../core/decorators/uuid.decorator.js';
 import { PaginatedResponseDto } from '../../../../../core/pagination/dto/paginated-response.dto.js';
 import { USERS_EXAMPLES } from './users.examples.js';
 
 class UserSearchItemDto {
-  @ApiProperty({ example: USERS_EXAMPLES.userId, format: 'uuid' })
+  @UUID()
   id!: string;
 
   @ApiProperty({ example: USERS_EXAMPLES.username })

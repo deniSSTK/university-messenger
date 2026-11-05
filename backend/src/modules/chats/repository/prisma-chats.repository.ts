@@ -1,16 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../prisma/prisma.service.js';
-import {
-  ChatNotFoundError,
-  ChatParticipantNotFoundError,
-} from '../domain/chats.errors.js';
-import type {
-  ChatListItem,
-  ChatMessage,
-  ChatParticipant,
-  PrivateChat,
-} from '../domain/chats.models.js';
+import { ChatNotFoundError } from '../domain/chats.errors.js';
+import type { ChatMessage, PrivateChat } from '../domain/chats.models.js';
 import type {
   IChatsRepository,
   IMessagesRepository,
@@ -30,6 +22,7 @@ const participantSelect = {
 
 const messageSelect = {
   id: true,
+  chatId: true,
   text: true,
   senderId: true,
   createdAt: true,
@@ -37,44 +30,51 @@ const messageSelect = {
   sender: { select: participantSelect },
 } as const;
 
-function mapParticipant(participant: ChatParticipant): ChatParticipant {
+function selectPrivateChat(currentUserId: string) {
   return {
-    id: participant.id,
-    username: participant.username,
-    displayName: participant.displayName,
-  };
+    id: true,
+    createdAt: true,
+    members: {
+      where: {
+        userId: { not: currentUserId },
+      },
+      take: 1,
+      select: { user: { select: participantSelect } },
+    },
+  } satisfies Prisma.ChatSelect;
 }
 
-function mapMessage(message: {
-  id: string;
-  text: string;
-  senderId: string;
-  createdAt: Date;
-  editedAt: Date | null;
-  sender: ChatParticipant;
-}): ChatMessage {
+type PrivateChatRow = Prisma.ChatGetPayload<{
+  select: ReturnType<typeof selectPrivateChat>;
+}>;
+
+type ChatPageRow = {
+  id: string | null;
+  total: number;
+};
+
+function mapMessage(
+  message: Prisma.MessageGetPayload<{ select: typeof messageSelect }>,
+): ChatMessage {
   return {
     id: message.id,
+    chatId: message.chatId,
     text: message.text,
     senderId: message.senderId,
-    sender: mapParticipant(message.sender),
+    sender: message.sender,
     createdAt: message.createdAt,
     editedAt: message.editedAt,
   };
 }
 
-function mapPrivateChat(chat: {
-  id: string;
-  createdAt: Date;
-  updatedAt: Date;
-  members: { user: ChatParticipant }[];
-}): PrivateChat {
-  return {
-    id: chat.id,
-    createdAt: chat.createdAt,
-    updatedAt: chat.updatedAt,
-    participants: chat.members.map((member) => mapParticipant(member.user)),
-  };
+function mapPrivateChat(chat: PrivateChatRow): PrivateChat | null {
+  const recipient = chat.members[0]?.user;
+
+  if (!recipient) {
+    return null;
+  }
+
+  return { id: chat.id, createdAt: chat.createdAt, recipient };
 }
 
 @Injectable()
@@ -83,77 +83,57 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
 
   async createOrFindPrivateChat(
     input: CreatePrivateChatInput,
-  ): Promise<PrivateChat> {
-    const userIds = [
-      input.currentUserId.toLowerCase(),
+  ): Promise<PrivateChat | null> {
+    const currentUserId = input.currentUserId.toLowerCase();
+    const [privateUserAId, privateUserBId] = [
+      currentUserId,
       input.recipientId.toLowerCase(),
     ].sort();
-    const lockKey = `${userIds[0]}:${userIds[1]}`;
+    const lockKey = `${privateUserAId}:${privateUserBId}`;
+    const select = selectPrivateChat(currentUserId);
 
     return this.prisma.$transaction(
       async (transaction) => {
-        await transaction.$queryRaw<{ acquired: boolean }[]>`
+        await transaction.$queryRaw`
           SELECT pg_advisory_xact_lock(hashtext(${lockKey})) IS NULL AS "acquired"
         `;
 
         const activeUsers = await transaction.user.count({
           where: {
-            id: { in: userIds },
+            id: { in: [privateUserAId, privateUserBId] },
             deletedAt: null,
           },
         });
 
         if (activeUsers !== 2) {
-          throw new ChatParticipantNotFoundError();
+          return null;
         }
 
-        const existingChats = await transaction.chat.findMany({
-          where: {
-            deletedAt: null,
-            AND: userIds.map((userId) => ({
-              members: {
-                some: { userId, deletedAt: null },
-              },
-            })),
-          },
+        const existingChat = await transaction.chat.findFirst({
+          where: { privateUserAId, privateUserBId, deletedAt: null },
           select: {
-            id: true,
-            createdAt: true,
-            updatedAt: true,
-            members: {
-              where: { deletedAt: null },
-              select: { user: { select: participantSelect } },
-            },
+            ...select,
+            _count: { select: { members: { where: { deletedAt: null } } } },
           },
-          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
         });
 
-        const existingChat = existingChats.find(
-          (chat) =>
-            chat.members.length === 2 &&
-            userIds.every((userId) =>
-              chat.members.some((member) => member.user.id === userId),
-            ),
-        );
-
         if (existingChat) {
+          if (existingChat._count.members !== 2) {
+            return null;
+          }
+
           return mapPrivateChat(existingChat);
         }
 
         const chat = await transaction.chat.create({
           data: {
+            privateUserAId,
+            privateUserBId,
             members: {
-              create: userIds.map((userId) => ({ userId })),
+              create: [{ userId: privateUserAId }, { userId: privateUserBId }],
             },
           },
-          select: {
-            id: true,
-            createdAt: true,
-            updatedAt: true,
-            members: {
-              select: { user: { select: participantSelect } },
-            },
-          },
+          select,
         });
 
         return mapPrivateChat(chat);
@@ -162,42 +142,73 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
     );
   }
 
-  async findChats(input: FindChatsInput): Promise<FindChatsResult> {
-    const where = {
-      deletedAt: null,
-      AND: [
-        {
-          members: {
-            some: { userId: input.currentUserId, deletedAt: null },
-          },
-        },
-        {
-          members: {
-            some: {
-              userId: { not: input.currentUserId },
-              deletedAt: null,
-              user: { deletedAt: null },
-            },
-          },
-        },
-      ],
-    };
+  async findChat(
+    chatId: string,
+    currentUserId: string,
+  ): Promise<PrivateChat | null> {
+    const chat = await this.prisma.chat.findFirst({
+      where: {
+        id: chatId,
+        deletedAt: null,
+        members: { some: { userId: currentUserId, deletedAt: null } },
+      },
+      select: selectPrivateChat(currentUserId),
+    });
 
-    const [chats, total] = await this.prisma.$transaction(
-      [
-        this.prisma.chat.findMany({
-          where,
+    return chat ? mapPrivateChat(chat) : null;
+  }
+
+  async findChats(input: FindChatsInput): Promise<FindChatsResult> {
+    return this.prisma.$transaction(
+      async (transaction) => {
+        const { currentUserId, offset, take } = input;
+        const page = await transaction.$queryRaw<ChatPageRow[]>`
+          WITH eligible AS (
+            SELECT chat."id", chat."createdAt"
+            FROM "Chat" AS chat
+            JOIN "ChatMember" AS membership ON membership."chatId" = chat."id"
+            WHERE chat."deletedAt" IS NULL
+              AND membership."userId" = ${currentUserId}::uuid
+              AND membership."deletedAt" IS NULL
+              AND EXISTS (
+                SELECT 1
+                FROM "ChatMember" AS other
+                JOIN "User" AS recipient ON recipient."id" = other."userId"
+                WHERE other."chatId" = chat."id"
+                  AND other."userId" <> membership."userId"
+                  AND other."deletedAt" IS NULL
+                  AND recipient."deletedAt" IS NULL
+              )
+          ), page AS (
+            SELECT eligible."id",
+                   COALESCE(latest."createdAt", eligible."createdAt") AS activity
+            FROM eligible
+            LEFT JOIN LATERAL (
+              SELECT message."createdAt"
+              FROM "Message" AS message
+              WHERE message."chatId" = eligible."id" AND message."deletedAt" IS NULL
+              ORDER BY message."createdAt" DESC, message."id" DESC
+              LIMIT 1
+            ) AS latest ON TRUE
+            ORDER BY activity DESC, eligible."id" DESC
+            LIMIT ${take} OFFSET ${offset}
+          )
+          SELECT page."id", totals.total
+          FROM (SELECT count(*)::int AS total FROM eligible) AS totals
+          LEFT JOIN page ON TRUE
+          ORDER BY page.activity DESC, page."id" DESC
+        `;
+        const ids = page.flatMap((row) => (row.id === null ? [] : [row.id]));
+        const total = page[0].total;
+
+        if (ids.length === 0) {
+          return { items: [], total };
+        }
+
+        const chats = await transaction.chat.findMany({
+          where: { id: { in: ids } },
           select: {
-            id: true,
-            createdAt: true,
-            updatedAt: true,
-            members: {
-              where: {
-                deletedAt: null,
-                user: { deletedAt: null },
-              },
-              select: { user: { select: participantSelect } },
-            },
+            ...selectPrivateChat(currentUserId),
             messages: {
               where: { deletedAt: null },
               orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -205,37 +216,31 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
               select: messageSelect,
             },
           },
-          orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
-          skip: input.offset,
-          take: input.take,
-        }),
-        this.prisma.chat.count({ where }),
-      ],
+        });
+
+        const chatsById = new Map(chats.map((chat) => [chat.id, chat]));
+        const items = ids.map((id) => {
+          const row = chatsById.get(id);
+          const chat = row && mapPrivateChat(row);
+
+          if (!row || !chat) {
+            throw new Error(`Could not load eligible private chat ${id}`);
+          }
+
+          const latest = row.messages[0];
+
+          return {
+            id: chat.id,
+            recipient: chat.recipient,
+            lastMessage: latest ? mapMessage(latest) : null,
+            lastActivityAt: latest?.createdAt ?? chat.createdAt,
+          };
+        });
+
+        return { items, total };
+      },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
-
-    const items = chats.map((chat): ChatListItem => {
-      const recipient = chat.members.find(
-        (member) => member.user.id !== input.currentUserId,
-      );
-
-      if (!recipient) {
-        throw new Error(`Private chat ${chat.id} has no other active member`);
-      }
-
-      const lastMessage = chat.messages[0]
-        ? mapMessage(chat.messages[0])
-        : null;
-
-      return {
-        id: chat.id,
-        recipient: mapParticipant(recipient.user),
-        lastMessage,
-        lastActivityAt: lastMessage?.createdAt ?? chat.updatedAt,
-      };
-    });
-
-    return { items, total };
   }
 
   async isActiveMember(chatId: string, userId: string): Promise<boolean> {
@@ -255,32 +260,34 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
 
   async sendMessage(input: SendMessageInput): Promise<ChatMessage> {
     return this.prisma.$transaction(async (transaction) => {
-      const chats = await transaction.chat.updateMany({
-        where: { id: input.chatId, deletedAt: null },
-        data: { updatedAt: new Date() },
-      });
+      const [membership] = await transaction.$queryRaw<{ id: string }[]>`
+        SELECT chat."id"
+        FROM "Chat" AS chat
+        JOIN "ChatMember" AS membership ON membership."chatId" = chat."id"
+        WHERE chat."id" = ${input.chatId}::uuid
+          AND chat."deletedAt" IS NULL
+          AND membership."userId" = ${input.senderId}::uuid
+          AND membership."deletedAt" IS NULL
+        FOR UPDATE OF chat, membership
+      `;
 
-      if (chats.count === 0) {
+      if (!membership) {
         throw new ChatNotFoundError();
       }
 
-      const membership = await transaction.chatMember.findUnique({
-        where: {
-          chatId_userId: {
-            chatId: input.chatId,
-            userId: input.senderId,
-          },
-        },
-        select: { deletedAt: true },
-      });
-
-      if (!membership || membership.deletedAt) {
-        throw new ChatNotFoundError();
-      }
-
-      const [activity] = await transaction.$queryRaw<
-        { activityAt: Date }[]
-      >`SELECT clock_timestamp() AS "activityAt"`;
+      // A later send must sort ahead of the previous message even within one millisecond.
+      const [activity] = await transaction.$queryRaw<{ activityAt: Date }[]>`
+        SELECT GREATEST(
+          clock_timestamp()::timestamptz(3),
+          (
+            SELECT "createdAt" + interval '1 millisecond'
+            FROM "Message"
+            WHERE "chatId" = ${input.chatId}::uuid
+            ORDER BY "createdAt" DESC, "id" DESC
+            LIMIT 1
+          )
+        ) AS "activityAt"
+      `;
 
       if (!activity) {
         throw new Error('Could not determine chat activity time');

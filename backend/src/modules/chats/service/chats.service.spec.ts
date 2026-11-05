@@ -19,6 +19,7 @@ describe('ChatsService', () => {
   beforeEach(() => {
     chatsRepository = {
       createOrFindPrivateChat: jest.fn(),
+      findChat: jest.fn(),
       findChats: jest.fn(),
       isActiveMember: jest.fn(),
     };
@@ -66,14 +67,14 @@ describe('ChatsService', () => {
     ]);
   });
 
-  it.each([0, 4001])(
-    'rejects message text with %i characters',
-    async (length) => {
+  it.each(['', ' \n\t ', '🙂'.repeat(4001)])(
+    'rejects blank or oversized message text %#',
+    async (text) => {
       await expect(
         service.sendMessage({
           chatId: '9c858901-8a57-4791-81fe-4c455b099bc9',
           senderId: '550e8400-e29b-41d4-a716-446655440000',
-          text: 'a'.repeat(length),
+          text,
         }),
       ).rejects.toBeInstanceOf(InvalidMessageTextError);
       expect(chatsRepository.isActiveMember.mock.calls).toHaveLength(0);
@@ -86,7 +87,8 @@ describe('ChatsService', () => {
     async (length) => {
       const message: ChatMessage = {
         id: '6ba7b810-9dad-41d1-80b4-00c04fd430c8',
-        text: 'a'.repeat(length),
+        chatId: '9c858901-8a57-4791-81fe-4c455b099bc9',
+        text: '🙂'.repeat(length),
         senderId: '550e8400-e29b-41d4-a716-446655440000',
         sender: {
           id: '550e8400-e29b-41d4-a716-446655440000',
@@ -101,13 +103,13 @@ describe('ChatsService', () => {
 
       await expect(
         service.sendMessage({
-          chatId: '9c858901-8a57-4791-81fe-4c455b099bc9',
+          chatId: message.chatId,
           senderId: '550e8400-e29b-41d4-a716-446655440000',
           text: message.text,
         }),
       ).resolves.toEqual(message);
-      expect(messagesRepository.sendMessage.mock.calls[0][0].text).toHaveLength(
-        length,
+      expect(messagesRepository.sendMessage.mock.calls[0][0].text).toBe(
+        message.text,
       );
     },
   );
@@ -128,6 +130,7 @@ describe('ChatsService', () => {
   it('returns a cursor pointing to the oldest message in a non-final page', async () => {
     const newestMessage: ChatMessage = {
       id: '6ba7b811-9dad-41d1-80b4-00c04fd430c8',
+      chatId: '9c858901-8a57-4791-81fe-4c455b099bc9',
       text: 'newest',
       senderId: '550e8400-e29b-41d4-a716-446655440000',
       sender: {

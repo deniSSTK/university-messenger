@@ -1,13 +1,11 @@
 import {
   CannotCreateChatWithSelfError,
   ChatNotFoundError,
+  ChatParticipantNotFoundError,
   InvalidMessageCursorError,
   InvalidMessageTextError,
 } from '../domain/chats.errors.js';
-import {
-  MESSAGE_TEXT_MAX_LENGTH,
-  MESSAGE_TEXT_MIN_LENGTH,
-} from '../domain/chats.constants.js';
+import { MESSAGE_TEXT_MAX_LENGTH } from '../domain/chats.constants.js';
 import type {
   IChatsRepository,
   IMessagesRepository,
@@ -15,7 +13,7 @@ import type {
 import type { ChatMessage, MessageCursor } from '../domain/chats.models.js';
 import type {
   CreateChatInput,
-  CreateChatResult,
+  ChatDetailsResult,
   ListChatMessagesInput,
   ListChatMessagesResult,
   ListChatsInput,
@@ -82,12 +80,31 @@ class ChatsService {
     private readonly messagesRepository: IMessagesRepository,
   ) {}
 
-  async createChat(input: CreateChatInput): Promise<CreateChatResult> {
+  async createChat(input: CreateChatInput): Promise<ChatDetailsResult> {
     if (input.currentUserId.toLowerCase() === input.recipientId.toLowerCase()) {
       throw new CannotCreateChatWithSelfError();
     }
 
-    return this.chatsRepository.createOrFindPrivateChat(input);
+    const chat = await this.chatsRepository.createOrFindPrivateChat(input);
+
+    if (!chat) {
+      throw new ChatParticipantNotFoundError();
+    }
+
+    return chat;
+  }
+
+  async getChat(
+    chatId: string,
+    currentUserId: string,
+  ): Promise<ChatDetailsResult> {
+    const chat = await this.chatsRepository.findChat(chatId, currentUserId);
+
+    if (!chat) {
+      throw new ChatNotFoundError();
+    }
+
+    return chat;
   }
 
   async listChats(input: ListChatsInput): Promise<ListChatsResult> {
@@ -108,8 +125,8 @@ class ChatsService {
 
   async sendMessage(input: SendChatMessageInput): Promise<ChatMessage> {
     if (
-      input.text.length < MESSAGE_TEXT_MIN_LENGTH ||
-      input.text.length > MESSAGE_TEXT_MAX_LENGTH
+      !/\S/u.test(input.text) ||
+      [...input.text].length > MESSAGE_TEXT_MAX_LENGTH
     ) {
       throw new InvalidMessageTextError();
     }

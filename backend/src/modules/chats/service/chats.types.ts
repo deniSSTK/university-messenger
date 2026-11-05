@@ -1,7 +1,7 @@
 import type {
   ChatListItem,
   ChatMessage,
-  PrivateChat,
+  ChatParticipant,
 } from '../domain/chats.models.js';
 
 type CreateChatInput = {
@@ -40,11 +40,15 @@ type ListChatMessagesResult = {
   nextCursor: string | null;
 };
 
-type CreateChatResult = PrivateChat;
+type ChatDetailsResult = {
+  id: string;
+  createdAt: Date;
+  recipient: ChatParticipant;
+};
 
 export type {
   CreateChatInput,
-  CreateChatResult,
+  ChatDetailsResult,
   ListChatMessagesInput,
   ListChatMessagesResult,
   ListChatsInput,

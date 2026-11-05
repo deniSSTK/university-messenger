@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, Length } from 'class-validator';
+import { IsString, Length, Matches } from 'class-validator';
 import {
   MESSAGE_TEXT_MAX_LENGTH,
   MESSAGE_TEXT_MIN_LENGTH,
@@ -11,10 +11,13 @@ class SendMessageDto {
     example: CHATS_EXAMPLES.text,
     minLength: MESSAGE_TEXT_MIN_LENGTH,
     maxLength: MESSAGE_TEXT_MAX_LENGTH,
-    description: 'Message text; whitespace is preserved.',
+    pattern: '\\S',
+    description:
+      'Message text must contain a non-whitespace character. Whitespace and line breaks are preserved.',
   })
   @IsString()
   @Length(MESSAGE_TEXT_MIN_LENGTH, MESSAGE_TEXT_MAX_LENGTH)
+  @Matches(/\S/u, { message: 'text must contain a non-whitespace character' })
   text!: string;
 }
 

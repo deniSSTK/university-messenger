@@ -1,10 +1,7 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsUUID } from 'class-validator';
-import { CHATS_EXAMPLES } from './chats.examples.js';
+import { UUID } from '../../../../../core/decorators/uuid.decorator.js';
 
 class ChatIdParamsDto {
-  @ApiProperty({ example: CHATS_EXAMPLES.chatId, format: 'uuid' })
-  @IsUUID()
+  @UUID()
   chatId!: string;
 }
 

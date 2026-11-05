@@ -39,7 +39,10 @@ type FindMessagesResult = {
 };
 
 interface IChatsRepository {
-  createOrFindPrivateChat(input: CreatePrivateChatInput): Promise<PrivateChat>;
+  createOrFindPrivateChat(
+    input: CreatePrivateChatInput,
+  ): Promise<PrivateChat | null>;
+  findChat(chatId: string, currentUserId: string): Promise<PrivateChat | null>;
   findChats(input: FindChatsInput): Promise<FindChatsResult>;
   isActiveMember(chatId: string, userId: string): Promise<boolean>;
 }

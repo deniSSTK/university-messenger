@@ -39,6 +39,7 @@ type ChatResponse = {
 
 type MessageResponse = {
   id: string;
+  chatId: string;
   text: string;
   senderId: string;
   createdAt: string;
@@ -118,7 +119,10 @@ describeDatabase('Chats API (PostgreSQL)', () => {
 
     prisma = new PrismaClient({
       adapter: new PrismaPg(
-        { connectionString: process.env.TEST_DATABASE_URL },
+        {
+          connectionString: process.env.TEST_DATABASE_URL,
+          options: `-c search_path=${schema}`,
+        },
         { schema },
       ),
     });
@@ -205,8 +209,8 @@ describeDatabase('Chats API (PostgreSQL)', () => {
         .send({ recipientId: secondUser.user.id }),
       request(app.getHttpServer())
         .post('/chats')
-        .set('Authorization', `Bearer ${firstUser.accessToken}`)
-        .send({ recipientId: secondUser.user.id }),
+        .set('Authorization', `Bearer ${secondUser.accessToken}`)
+        .send({ recipientId: firstUser.user.id }),
     ]);
 
     expect(createChatRequests.map((response) => response.status)).toEqual([
@@ -224,6 +228,7 @@ describeDatabase('Chats API (PostgreSQL)', () => {
       },
     });
     expect(concurrentChat.id).toBe(chat.id);
+    expect(concurrentChat.recipient.id).toBe(firstUser.user.id);
 
     const savedChat = await prisma.chat.findUniqueOrThrow({
       where: { id: chat.id },
@@ -240,6 +245,36 @@ describeDatabase('Chats API (PostgreSQL)', () => {
       .expect(201);
     expect(responseBody<ChatResponse>(duplicateChatResponse).id).toBe(chat.id);
     expect(await prisma.chat.count()).toBe(1);
+
+    await expect(
+      prisma.chat.create({
+        data: {
+          privateUserAId: savedChat.privateUserAId,
+          privateUserBId: savedChat.privateUserBId,
+          members: {
+            create: [
+              { userId: firstUser.user.id },
+              { userId: secondUser.user.id },
+            ],
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'P2002' });
+
+    await request(app.getHttpServer())
+      .get(`/chats/${chat.id}`)
+      .set('Authorization', `Bearer ${firstUser.accessToken}`)
+      .expect(200)
+      .expect(chat);
+    await request(app.getHttpServer())
+      .get(`/chats/${chat.id}`)
+      .set('Authorization', `Bearer ${thirdUser.accessToken}`)
+      .expect(404);
+    await request(app.getHttpServer()).get(`/chats/${chat.id}`).expect(401);
+    await request(app.getHttpServer())
+      .get('/chats/not-a-uuid/messages')
+      .set('Authorization', `Bearer ${firstUser.accessToken}`)
+      .expect(400);
 
     await request(app.getHttpServer())
       .get(`/chats/${chat.id}/messages`)
@@ -290,6 +325,17 @@ describeDatabase('Chats API (PostgreSQL)', () => {
       .set('Authorization', `Bearer ${firstUser.accessToken}`)
       .expect(200);
 
+    await request(app.getHttpServer())
+      .post(`/chats/${chat.id}/messages`)
+      .set('Authorization', `Bearer ${firstUser.accessToken}`)
+      .send({ text: ' \n\t ' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post(`/chats/${chat.id}/messages`)
+      .set('Authorization', `Bearer ${firstUser.accessToken}`)
+      .send({ text: 'Spoofed message', senderId: secondUser.user.id })
+      .expect(400);
+
     const firstMessageResponse = await request(app.getHttpServer())
       .post(`/chats/${chat.id}/messages`)
       .set('Authorization', `Bearer ${firstUser.accessToken}`)
@@ -299,6 +345,7 @@ describeDatabase('Chats API (PostgreSQL)', () => {
     const firstMessage = responseBody<MessageResponse>(firstMessageResponse);
 
     expect(firstMessage).toMatchObject({
+      chatId: chat.id,
       text: 'First message',
       senderId: firstUser.user.id,
     });
@@ -311,6 +358,7 @@ describeDatabase('Chats API (PostgreSQL)', () => {
     const secondMessage = responseBody<MessageResponse>(secondMessageResponse);
 
     expect(secondMessage).toMatchObject({
+      chatId: chat.id,
       text: 'Second message',
       senderId: secondUser.user.id,
     });
@@ -361,6 +409,11 @@ describeDatabase('Chats API (PostgreSQL)', () => {
     expect(olderHistory.items[0].text).toBe(oldestMessage.text);
     expect(olderHistory.nextCursor).toBeNull();
 
+    await prisma.chat.update({
+      where: { id: secondChat.id },
+      data: { updatedAt: new Date('2090-01-01T00:00:00.000Z') },
+    });
+
     const chatListResponse = await request(app.getHttpServer())
       .get('/chats')
       .query({ page: 1, limit: 1 })
@@ -401,6 +454,7 @@ describeDatabase('Chats API (PostgreSQL)', () => {
       id: secondChat.id,
       recipient: { id: thirdUser.user.id },
       lastMessage: null,
+      lastActivityAt: secondChat.createdAt,
     });
     expect(secondChatPage.meta).toEqual({
       page: 2,
@@ -417,5 +471,122 @@ describeDatabase('Chats API (PostgreSQL)', () => {
     expect(responseBody<ChatListResponse>(emptyChatPageResponse).items).toEqual(
       [],
     );
+
+    const tiedTimestamp = new Date(Date.now() + 1_000);
+    await prisma.message.updateMany({
+      where: { chatId: chat.id },
+      data: { createdAt: tiedTimestamp },
+    });
+    const expectedOrder = [firstMessage.id, secondMessage.id].sort().reverse();
+
+    const tiedPageResponse = await request(app.getHttpServer())
+      .get(`/chats/${chat.id}/messages`)
+      .set('Authorization', `Bearer ${firstUser.accessToken}`)
+      .query({ limit: 1 })
+      .expect(200);
+    const tiedPage = responseBody<MessageHistoryResponse>(tiedPageResponse);
+    expect(tiedPage.items.map((message) => message.id)).toEqual(
+      expectedOrder.slice(0, 1),
+    );
+    expect(tiedPage.nextCursor).toBeTruthy();
+
+    const unicodeText = `\n${'🙂'.repeat(3999)}`;
+    const newMessageResponse = await request(app.getHttpServer())
+      .post(`/chats/${chat.id}/messages`)
+      .set('Authorization', `Bearer ${secondUser.accessToken}`)
+      .send({ text: unicodeText })
+      .expect(201);
+    const newMessage = responseBody<MessageResponse>(newMessageResponse);
+    expect(newMessage.text).toBe(unicodeText);
+    expect(Date.parse(newMessage.createdAt)).toBeGreaterThan(
+      tiedTimestamp.getTime(),
+    );
+
+    const olderTiedPageResponse = await request(app.getHttpServer())
+      .get(`/chats/${chat.id}/messages`)
+      .set('Authorization', `Bearer ${firstUser.accessToken}`)
+      .query({ limit: 1, cursor: tiedPage.nextCursor })
+      .expect(200);
+    const olderTiedPage = responseBody<MessageHistoryResponse>(
+      olderTiedPageResponse,
+    );
+    expect(olderTiedPage.items.map((message) => message.id)).toEqual(
+      expectedOrder.slice(1),
+    );
+    expect(olderTiedPage.nextCursor).toBeNull();
+
+    await prisma.chatMember.update({
+      where: { chatId_userId: { chatId: chat.id, userId: firstUser.user.id } },
+      data: { deletedAt: new Date() },
+    });
+    await request(app.getHttpServer())
+      .get(`/chats/${chat.id}`)
+      .set('Authorization', `Bearer ${firstUser.accessToken}`)
+      .expect(404);
+  });
+
+  it('backfills the canonical pair without changing existing chats or messages', async () => {
+    const legacySchema = `${schema}_legacy`;
+    const connection = await pool.connect();
+    const [firstId, secondId] = [randomUUID(), randomUUID()].sort();
+    const chatId = randomUUID();
+    const messageId = randomUUID();
+    const migrationsPath = join(process.cwd(), 'prisma/migrations');
+
+    try {
+      await connection.query(`CREATE SCHEMA "${legacySchema}"`);
+      await connection.query(`SET search_path TO "${legacySchema}"`);
+      await connection.query(
+        await readFile(
+          join(migrationsPath, '20261020190100_init_messenger/migration.sql'),
+          'utf8',
+        ),
+      );
+      await connection.query(
+        `INSERT INTO "User" ("id", "email", "username", "displayName", "passwordHash", "updatedAt")
+         VALUES ($1, 'first@example.com', 'first', 'First', 'test', now()),
+                ($2, 'second@example.com', 'second', 'Second', 'test', now())`,
+        [firstId, secondId],
+      );
+      await connection.query(
+        'INSERT INTO "Chat" ("id", "updatedAt") VALUES ($1, now())',
+        [chatId],
+      );
+      await connection.query(
+        'INSERT INTO "ChatMember" ("chatId", "userId") VALUES ($1, $3), ($1, $2)',
+        [chatId, firstId, secondId],
+      );
+      await connection.query(
+        `INSERT INTO "Message" ("id", "chatId", "senderId", "text")
+         VALUES ($1, $2, $3, 'Existing message')`,
+        [messageId, chatId, firstId],
+      );
+
+      await connection.query(
+        await readFile(
+          join(
+            migrationsPath,
+            '20261105000100_unique_private_chat_pair/migration.sql',
+          ),
+          'utf8',
+        ),
+      );
+
+      const chats = await connection.query(
+        'SELECT "id", "privateUserAId", "privateUserBId" FROM "Chat"',
+      );
+      expect(chats.rows).toEqual([
+        { id: chatId, privateUserAId: firstId, privateUserBId: secondId },
+      ]);
+      const messages = await connection.query(
+        'SELECT "id", "chatId" FROM "Message"',
+      );
+      expect(messages.rows).toEqual([{ id: messageId, chatId }]);
+    } finally {
+      await connection.query('ROLLBACK');
+      await connection.query('RESET search_path');
+      await connection.query(`DROP SCHEMA IF EXISTS "${legacySchema}" CASCADE`);
+      connection.release();
+    }
   });
 });

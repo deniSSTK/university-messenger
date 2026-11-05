@@ -1,10 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { UUID } from '../../../../../core/decorators/uuid.decorator.js';
 import { PaginatedResponseDto } from '../../../../../core/pagination/dto/paginated-response.dto.js';
 import { PaginationMetaDto } from '../../../../../core/pagination/dto/pagination-meta.dto.js';
 import { CHATS_EXAMPLES } from './chats.examples.js';
 
 class ChatParticipantDto {
-  @ApiProperty({ example: CHATS_EXAMPLES.userId, format: 'uuid' })
+  @UUID()
   id!: string;
 
   @ApiProperty({ example: CHATS_EXAMPLES.username })
@@ -15,13 +16,16 @@ class ChatParticipantDto {
 }
 
 class ChatMessageDto {
-  @ApiProperty({ example: CHATS_EXAMPLES.messageId, format: 'uuid' })
+  @UUID()
   id!: string;
+
+  @UUID()
+  chatId!: string;
 
   @ApiProperty({ example: CHATS_EXAMPLES.text })
   text!: string;
 
-  @ApiProperty({ example: CHATS_EXAMPLES.userId, format: 'uuid' })
+  @UUID()
   senderId!: string;
 
   @ApiProperty({ type: ChatParticipantDto })
@@ -44,7 +48,7 @@ class ChatMessageDto {
 }
 
 class ChatListItemDto {
-  @ApiProperty({ example: CHATS_EXAMPLES.chatId, format: 'uuid' })
+  @UUID()
   id!: string;
 
   @ApiProperty({ type: ChatParticipantDto })
@@ -69,8 +73,8 @@ class ListChatsResponseDto extends PaginatedResponseDto<ChatListItemDto> {
   declare meta: PaginationMetaDto;
 }
 
-class CreateChatResponseDto {
-  @ApiProperty({ example: CHATS_EXAMPLES.chatId, format: 'uuid' })
+class ChatDetailsResponseDto {
+  @UUID()
   id!: string;
 
   @ApiProperty({
@@ -84,6 +88,8 @@ class CreateChatResponseDto {
   recipient!: ChatParticipantDto;
 }
 
+class CreateChatResponseDto extends ChatDetailsResponseDto {}
+
 class SendMessageResponseDto extends ChatMessageDto {}
 
 class ListMessagesResponseDto {
@@ -91,6 +97,7 @@ class ListMessagesResponseDto {
   items!: ChatMessageDto[];
 
   @ApiProperty({
+    type: String,
     example: CHATS_EXAMPLES.cursor,
     nullable: true,
     description:
@@ -101,6 +108,7 @@ class ListMessagesResponseDto {
 
 export {
   ChatListItemDto,
+  ChatDetailsResponseDto,
   ChatMessageDto,
   ChatParticipantDto,
   CreateChatResponseDto,

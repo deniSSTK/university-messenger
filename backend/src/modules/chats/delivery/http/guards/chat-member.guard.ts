@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
   type CanActivate,
@@ -23,7 +24,7 @@ class ChatMemberGuard implements CanActivate {
     const chatId = request.params.chatId;
 
     if (!chatId || !isUUID(chatId)) {
-      throw new NotFoundException('Chat not found');
+      throw new BadRequestException('chatId must be a UUID');
     }
 
     const isMember = await this.chats.isActiveMember(

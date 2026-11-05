@@ -1,8 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { UUID } from '../../../../../core/decorators/uuid.decorator.js';
 import { AUTH_EXAMPLES, AUTH_USER_EXAMPLE } from './auth.examples.js';
 
 class PublicUserDto {
-  @ApiProperty({ example: AUTH_EXAMPLES.userId, format: 'uuid' })
+  @UUID()
   id!: string;
 
   @ApiProperty({ example: AUTH_EXAMPLES.email, format: 'email' })

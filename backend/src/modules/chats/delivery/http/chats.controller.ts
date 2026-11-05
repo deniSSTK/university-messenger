@@ -21,6 +21,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { UUID_EXAMPLE } from '../../../../core/examples/uuid.examples.js';
 import {
   PAGINATION_DEFAULT_LIMIT,
   PAGINATION_DEFAULT_PAGE,
@@ -33,6 +34,7 @@ import { PAGINATION_EXAMPLES } from '../../../../core/pagination/dto/pagination.
 import { AccessTokenGuard } from '../../../auth/delivery/http/guards/access-token.guard.js';
 import type { AuthenticatedRequest } from '../../../auth/delivery/http/auth-http.types.js';
 import { ChatsService } from '../../service/chats.service.js';
+import type { ChatDetailsResult } from '../../service/chats.types.js';
 import {
   CHAT_HISTORY_DEFAULT_LIMIT,
   CHAT_HISTORY_MAX_LIMIT,
@@ -43,7 +45,7 @@ import { ChatsExceptionFilter } from './chats-exception.filter.js';
 import { ChatIdParamsDto } from './dto/chat-id-params.dto.js';
 import { CreateChatDto } from './dto/create-chat.dto.js';
 import {
-  ChatParticipantDto,
+  ChatDetailsResponseDto,
   CreateChatResponseDto,
   ListChatsResponseDto,
   ListMessagesResponseDto,
@@ -52,6 +54,20 @@ import {
 import { ListChatsRequestDto } from './dto/list-chats-request.dto.js';
 import { ListMessagesRequestDto } from './dto/list-messages-request.dto.js';
 import { SendMessageDto } from './dto/send-message.dto.js';
+
+function toChatDetailsResponse(
+  chat: ChatDetailsResult,
+): ChatDetailsResponseDto {
+  return {
+    id: chat.id,
+    createdAt: chat.createdAt,
+    recipient: {
+      id: chat.recipient.id,
+      username: chat.recipient.username,
+      displayName: chat.recipient.displayName,
+    },
+  };
+}
 
 @ApiTags('Chats')
 @ApiBearerAuth()
@@ -81,28 +97,34 @@ class ChatsController {
     @Body() dto: CreateChatDto,
     @Req() request: AuthenticatedRequest,
   ): Promise<CreateChatResponseDto> {
-    const currentUserId = request.auth.user.id;
     const chat = await this.chats.createChat({
-      currentUserId,
+      currentUserId: request.auth.user.id,
       recipientId: dto.recipientId,
     });
-    const recipient = chat.participants.find(
-      (participant) => participant.id !== currentUserId,
-    );
 
-    if (!recipient) {
-      throw new Error(`Private chat ${chat.id} has no other participant`);
-    }
+    return toChatDetailsResponse(chat);
+  }
 
-    return {
-      id: chat.id,
-      createdAt: chat.createdAt,
-      recipient: {
-        id: recipient.id,
-        username: recipient.username,
-        displayName: recipient.displayName,
-      } satisfies ChatParticipantDto,
-    };
+  @Get(':chatId')
+  @UseGuards(ChatMemberGuard)
+  @ApiOperation({ summary: 'Get a private chat by ID' })
+  @ApiParam({ name: 'chatId', format: 'uuid', example: UUID_EXAMPLE })
+  @ApiOkResponse({ type: ChatDetailsResponseDto })
+  @ApiBadRequestResponse({ description: 'Invalid chat ID.' })
+  @ApiNotFoundResponse({
+    description: 'The chat does not exist or the current user is not a member.',
+  })
+  @ApiUnauthorizedResponse({
+    description:
+      'Missing, invalid or expired access token or inactive session.',
+  })
+  async getChat(
+    @Param() params: ChatIdParamsDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<ChatDetailsResponseDto> {
+    const chat = await this.chats.getChat(params.chatId, request.auth.user.id);
+
+    return toChatDetailsResponse(chat);
   }
 
   @Get()
@@ -160,12 +182,12 @@ class ChatsController {
   @ApiParam({
     name: 'chatId',
     format: 'uuid',
-    example: CHATS_EXAMPLES.chatId,
+    example: UUID_EXAMPLE,
   })
   @ApiCreatedResponse({ type: SendMessageResponseDto })
   @ApiBadRequestResponse({
     description:
-      'Invalid chat ID or message text must contain between 1 and 4000 characters.',
+      'Invalid chat ID or text with no non-whitespace character or more than 4000 characters.',
   })
   @ApiNotFoundResponse({
     description: 'The chat does not exist or the current user is not a member.',
@@ -194,7 +216,7 @@ class ChatsController {
   @ApiParam({
     name: 'chatId',
     format: 'uuid',
-    example: CHATS_EXAMPLES.chatId,
+    example: UUID_EXAMPLE,
   })
   @ApiQuery({
     name: 'limit',
@@ -215,7 +237,7 @@ class ChatsController {
   })
   @ApiOkResponse({ type: ListMessagesResponseDto })
   @ApiBadRequestResponse({
-    description: 'Invalid cursor or pagination parameters.',
+    description: 'Invalid chat ID, cursor or pagination parameters.',
   })
   @ApiNotFoundResponse({
     description: 'The chat does not exist or the current user is not a member.',

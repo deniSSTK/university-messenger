@@ -18,7 +18,9 @@ class CannotCreateChatWithSelfError extends Error {
 
 class InvalidMessageTextError extends Error {
   constructor() {
-    super('Message text must contain between 1 and 4000 characters');
+    super(
+      'Message text must contain a non-whitespace character and be at most 4000 characters long',
+    );
   }
 }
 

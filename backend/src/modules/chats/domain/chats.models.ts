@@ -6,6 +6,7 @@ type ChatParticipant = {
 
 type ChatMessage = {
   id: string;
+  chatId: string;
   text: string;
   senderId: string;
   sender: ChatParticipant;
@@ -16,8 +17,7 @@ type ChatMessage = {
 type PrivateChat = {
   id: string;
   createdAt: Date;
-  updatedAt: Date;
-  participants: ChatParticipant[];
+  recipient: ChatParticipant;
 };
 
 type ChatListItem = {

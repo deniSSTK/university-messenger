@@ -1,9 +1,10 @@
+import { UUID_EXAMPLE } from '../../../../../core/examples/uuid.examples.js';
+
 const AUTH_EXAMPLES = {
   email: 'alice@example.com',
   password: 'Example-password123',
   username: 'alice',
   displayName: 'Alice',
-  userId: '550e8400-e29b-41d4-a716-446655440000',
   createdAt: '2026-10-26T10:00:00.000Z',
   updatedAt: '2026-10-26T10:00:00.000Z',
   accessToken: 'eyJhbGciOiJIUzI1NiJ9.example.signature',
@@ -12,7 +13,7 @@ const AUTH_EXAMPLES = {
 } as const;
 
 const AUTH_USER_EXAMPLE = {
-  id: AUTH_EXAMPLES.userId,
+  id: UUID_EXAMPLE,
   email: AUTH_EXAMPLES.email,
   username: AUTH_EXAMPLES.username,
   displayName: AUTH_EXAMPLES.displayName,
