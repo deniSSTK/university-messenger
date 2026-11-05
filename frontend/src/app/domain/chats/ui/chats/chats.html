@@ -1,44 +1,413 @@
-<div class="chat-layout">
-  <aside class="sidebar">
-    <div class="sidebar-header">
-      <div class="menu-icon">☰</div>
-      <input type="text" placeholder="Поиск" class="search-input" />
+<div class="chat-layout" [class.dialog-open]="selectedId()" (keydown.escape)="closeMenus()">
+  @if (accountMenuOpen() || chatMenuOpen()) {
+    <button
+      type="button"
+      class="menu-backdrop"
+      aria-label="Закрити меню"
+      (click)="closeMenus()"
+    ></button>
+  }
+  <aside class="sidebar" aria-label="Чати та пошук">
+    <header class="sidebar-header">
+      @if (searching()) {
+        <button
+          type="button"
+          class="icon-button"
+          aria-label="Повернутися до чатів"
+          (click)="searchChanged('')"
+        >
+          <app-chat-icon name="back" />
+        </button>
+      } @else {
+        <button
+          type="button"
+          class="icon-button"
+          aria-label="Меню акаунта"
+          [attr.aria-expanded]="accountMenuOpen()"
+          (click)="toggleAccountMenu()"
+        >
+          <app-chat-icon name="menu" />
+        </button>
+      }
+      <div class="search-box">
+        <app-chat-icon name="search" /><label class="sr-only" for="user-search"
+          >Пошук за username</label
+        ><input
+          id="user-search"
+          type="search"
+          placeholder="Пошук"
+          autocomplete="off"
+          [value]="search()"
+          (input)="searchChanged(inputValue($event))"
+        />
+        @if (searching()) {
+          <button
+            type="button"
+            class="icon-button search-clear"
+            aria-label="Очистити пошук"
+            (click)="searchChanged('')"
+          >
+            <app-chat-icon name="clear" />
+          </button>
+        }
+      </div>
+      <button
+        type="button"
+        class="icon-button"
+        aria-label="Оновити список чатів"
+        title="Оновити список чатів"
+        [disabled]="listLoading()"
+        (click)="loadChats()"
+      >
+        <app-chat-icon name="refresh" [class.spinning]="listLoading()" />
+      </button>
+      @if (accountMenuOpen()) {
+        <app-chat-account-menu
+          [person]="viewer()"
+          [initial]="initials(viewer()?.displayName ?? 'Messenger')"
+          [loading]="profileLoading()"
+          [profileError]="profileError()"
+          [logoutError]="errorMessage()"
+          [loggingOut]="isLoggingOut()"
+          (logout)="logout()"
+        />
+      }
+    </header>
+    <div class="sidebar-content" [attr.aria-busy]="searching() ? searchLoading() : listLoading()">
+      <h1 class="sr-only">{{ searching() ? 'Результати пошуку' : 'Чати' }}</h1>
+      <div class="section-label">
+        {{ searching() ? 'Глобальний пошук' : 'Особисті повідомлення' }}
+      </div>
+      @if (searching()) {
+        @if (searchLoading()) {
+          <p class="status" role="status"><span class="loader"></span>Шукаємо користувачів…</p>
+        }
+        @if (searchError()) {
+          <div class="status error" role="alert">
+            <p>{{ searchError() }}</p>
+            <button type="button" class="text-button" (click)="retrySearch()">
+              Повторити пошук
+            </button>
+          </div>
+        }
+        @if (!searchLoading() && !searchError() && searchResults().length === 0) {
+          <p class="status empty-list">Нікого не знайдено</p>
+        }
+        <ul class="chat-list">
+          @for (user of searchResults(); track user.id) {
+            <li>
+              <button
+                type="button"
+                class="chat-item"
+                [disabled]="!!openingUserId()"
+                (click)="openUser(user)"
+              >
+                <span class="avatar" aria-hidden="true">
+                  @if (openingUserId() === user.id) {
+                    <span class="loader"></span>
+                  } @else {
+                    {{ initials(user.displayName) }}
+                  }</span
+                ><span class="chat-info"
+                  ><strong class="chat-name">{{ user.displayName }}</strong
+                  ><span class="chat-preview username">{{ '@' + user.username }}</span></span
+                >
+              </button>
+            </li>
+          }
+        </ul>
+        @if (searchPages() > 0) {
+          <nav class="pagination" aria-label="Сторінки пошуку">
+            <button
+              type="button"
+              class="icon-button"
+              aria-label="Попередня сторінка"
+              [disabled]="searchPage() <= 1 || searchLoading()"
+              (click)="searchAt(searchPage() - 1)"
+            >
+              <app-chat-icon name="back" /></button
+            ><span>{{ searchPage() }} з {{ searchPages() }}</span
+            ><button
+              type="button"
+              class="icon-button next-page"
+              aria-label="Наступна сторінка"
+              [disabled]="searchPage() >= searchPages() || searchLoading()"
+              (click)="searchAt(searchPage() + 1)"
+            >
+              <app-chat-icon name="back" />
+            </button>
+          </nav>
+        }
+      } @else {
+        @if (listLoading() && chats().length === 0) {
+          <p class="status" role="status"><span class="loader"></span>Завантажуємо чати…</p>
+        }
+        @if (listError()) {
+          <div class="status error" role="alert">
+            <p>{{ listError() }}</p>
+            <button type="button" class="text-button" (click)="retryList()">Повторити</button>
+          </div>
+        }
+        @if (!listLoading() && !listError() && chats().length === 0) {
+          <div class="empty-list">
+            <app-chat-icon name="chat" />
+            <h2>Ваші повідомлення</h2>
+            <p>Знайдіть людину за @username,<br />щоб почати спілкування.</p>
+          </div>
+        }
+        <ul class="chat-list">
+          @for (chat of chats(); track chat.id) {
+            <li>
+              <button
+                type="button"
+                class="chat-item"
+                [class.active]="selectedId() === chat.id"
+                [attr.aria-current]="selectedId() === chat.id ? 'page' : null"
+                (click)="openChat(chat.id)"
+              >
+                <span class="avatar" aria-hidden="true">{{
+                  initials(chat.person.displayName)
+                }}</span
+                ><span class="chat-info"
+                  ><span class="chat-header"
+                    ><strong class="chat-name">{{ chat.person.displayName }}</strong
+                    ><time [attr.datetime]="chat.activityAt">{{
+                      chatTime(chat.activityAt)
+                    }}</time></span
+                  ><span class="chat-preview">
+                    @if (chat.lastMessage; as last) {
+                      @if (last.senderId === viewer()?.id) {
+                        <span class="sender-prefix">Ви: </span>
+                      }
+                      {{ last.text }}
+                    } @else {
+                      {{ '@' + chat.person.username }}
+                    }
+                  </span></span
+                >
+              </button>
+            </li>
+          }
+        </ul>
+        @if (hasMoreChats()) {
+          <button
+            type="button"
+            class="load-more"
+            [disabled]="listLoading()"
+            (click)="loadChats(true)"
+          >
+            {{ listLoading() ? 'Завантажуємо…' : 'Показати ще чати' }}
+          </button>
+        }
+      }
+      @if (openError()) {
+        <p class="status error" role="alert">{{ openError() }}</p>
+      }
     </div>
-
-    <ul class="chat-list">
-      <li class="chat-item active">
-        <div class="avatar blue">Т</div>
-        <div class="chat-info">
-          <div class="chat-header">
-            <span class="chat-name">teamlead</span>
-            <span class="chat-time">12:00</span>
-          </div>
-          <span class="chat-last-message">Architek aprove</span>
-        </div>
-      </li>
-      <li class="chat-item">
-        <div class="avatar purple">Б</div>
-        <div class="chat-info">
-          <div class="chat-header">
-            <span class="chat-name">Backend</span>
-            <span class="chat-time">Yesterday</span>
-          </div>
-          <span class="chat-last-message">Tokens work!</span>
-        </div>
-      </li>
-    </ul>
-
-    @if (errorMessage()) {
-      <p role="alert">{{ errorMessage() }}</p>
-    }
-    <button class="logout-btn" [disabled]="isLoggingOut()" (click)="logout()">
-      {{ isLoggingOut() ? 'Logging out...' : 'Exit from account' }}
-    </button>
   </aside>
-
-  <main class="chat-area">
-    <div class="chat-placeholder">
-      <span>Select chat</span>
-    </div>
+  <main class="chat-area" aria-label="Діалог">
+    @if (selectedId()) {
+      <header class="dialog-header">
+        <button
+          type="button"
+          class="icon-button back-button"
+          aria-label="До списку чатів"
+          (click)="back()"
+        >
+          <app-chat-icon name="back" />
+        </button>
+        @if (active(); as chat) {
+          <span class="avatar peer-avatar" aria-hidden="true">{{
+            initials(chat.person.displayName)
+          }}</span>
+        }
+        <div class="peer">
+          <strong>{{ active()?.person?.displayName ?? 'Діалог' }}</strong
+          ><span>
+            @if (active(); as chat) {
+              {{ '@' + chat.person.username }}
+            } @else {
+              Особисте повідомлення
+            }
+          </span>
+        </div>
+        @if (active()) {
+          <button
+            type="button"
+            class="icon-button"
+            aria-label="Оновити повідомлення"
+            title="Оновити повідомлення"
+            [disabled]="historyLoading() || chatLoading()"
+            (click)="refreshMessages()"
+          >
+            <app-chat-icon name="refresh" [class.spinning]="historyLoading()" />
+          </button>
+        }
+        <button
+          type="button"
+          class="icon-button"
+          aria-label="Меню діалогу"
+          [attr.aria-expanded]="chatMenuOpen()"
+          (click)="chatMenuOpen.set(!chatMenuOpen()); accountMenuOpen.set(false)"
+        >
+          <app-chat-icon name="more" />
+        </button>
+        @if (chatMenuOpen()) {
+          <nav class="popover dialog-menu" aria-label="Дії діалогу">
+            <button type="button" class="menu-action" (click)="closeMenus(); back()">
+              <app-chat-icon name="back" />До списку чатів
+            </button>
+            @if (active()) {
+              <button
+                type="button"
+                class="menu-action"
+                [disabled]="historyLoading()"
+                (click)="closeMenus(); refreshMessages()"
+              >
+                <app-chat-icon name="refresh" />Оновити повідомлення
+              </button>
+            }
+          </nav>
+        }
+      </header>
+      @if (chatLoading()) {
+        <p class="dialog-status" role="status"><span class="loader"></span>Завантажуємо діалог…</p>
+      }
+      @if (chatError()) {
+        <div class="dialog-status" role="alert">
+          <p>{{ chatError() }}</p>
+          <button type="button" class="text-button" (click)="retryChat()">Повторити</button
+          ><button type="button" class="text-button" (click)="back()">До списку чатів</button>
+        </div>
+      }
+      @if (active()) {
+        <div class="history-shell">
+          <div
+            #messageViewport
+            class="messages"
+            tabindex="0"
+            aria-label="Історія повідомлень"
+            [attr.aria-busy]="historyLoading()"
+            (scroll)="viewportScrolled()"
+          >
+            <div class="history-content">
+              @if (nextBefore()) {
+                <button
+                  type="button"
+                  class="load-more older-button"
+                  [disabled]="historyLoading()"
+                  (click)="loadOlder()"
+                >
+                  {{ historyLoading() ? 'Завантажуємо…' : 'Старіші повідомлення' }}
+                </button>
+              }
+              @if (historyLoading() && !nextBefore()) {
+                <p class="history-status" role="status">Оновлюємо повідомлення…</p>
+              }
+              @if (historyError()) {
+                <div class="history-status error" role="alert">
+                  <p>{{ historyError() }}</p>
+                  <button
+                    type="button"
+                    class="text-button"
+                    [disabled]="historyLoading()"
+                    (click)="retryHistory()"
+                  >
+                    Повторити
+                  </button>
+                </div>
+              }
+              @if (messages().length === 0 && !historyLoading()) {
+                <p class="empty-dialog">Повідомлень ще немає</p>
+              }
+              <ol class="message-list">
+                @for (row of messageRows(); track row.message.id) {
+                  @if (row.dateLabel) {
+                    <li class="date-separator">
+                      <span>{{ row.dateLabel }}</span>
+                    </li>
+                  }
+                  <li
+                    class="message-row"
+                    [class.own]="row.message.senderId === viewer()?.id"
+                    [class.grouped]="row.grouped"
+                    [attr.data-message-id]="row.message.id"
+                  >
+                    <app-chat-bubble
+                      [message]="row.message"
+                      [own]="row.message.senderId === viewer()?.id"
+                    />
+                  </li>
+                }
+              </ol>
+            </div>
+          </div>
+          @if (showScrollDown()) {
+            <button
+              type="button"
+              class="scroll-down icon-button"
+              aria-label="До останніх повідомлень"
+              (click)="jumpToLatest()"
+            >
+              <app-chat-icon name="down" />
+            </button>
+          }
+        </div>
+        <div class="composer-panel">
+          @if (sendError()) {
+            <div class="composer-error" role="alert">
+              <span>{{ sendError() }}</span
+              ><button type="button" class="text-button" [disabled]="sending()" (click)="send()">
+                Повторити
+              </button>
+            </div>
+          }
+          <form class="composer" (submit)="$event.preventDefault(); send()">
+            <label class="sr-only" for="message-text">Повідомлення</label
+            ><textarea
+              #composerInput
+              id="message-text"
+              rows="1"
+              placeholder="Написати повідомлення…"
+              [value]="draft()"
+              [disabled]="sending()"
+              [attr.aria-invalid]="draft().length > 4000"
+              aria-describedby="message-help"
+              (input)="draftChanged(inputValue($event))"
+              (keydown)="composerKey($event)"
+            ></textarea
+            ><button
+              type="submit"
+              class="send-button icon-button"
+              aria-label="Надіслати повідомлення"
+              [disabled]="!canSend()"
+            >
+              @if (sending()) {
+                <span class="loader"></span>
+              } @else {
+                <app-chat-icon name="send" />
+              }</button
+            ><span id="message-help" class="sr-only"
+              >Enter надсилає, Shift+Enter додає рядок. Максимум 4000 символів.</span
+            >
+            @if (sending()) {
+              <span class="sr-only" role="status">Надсилаємо повідомлення…</span>
+            }
+          </form>
+          @if (draft().length > 3600) {
+            <p class="character-count" [class.error]="draft().length > 4000" role="status">
+              {{ draft().length }} / 4000
+              @if (draft().length > 4000) {
+                · Скоротіть повідомлення
+              }
+            </p>
+          }
+        </div>
+      }
+    } @else {
+      <div class="welcome-state">
+        <p>Виберіть чат, щоб почати спілкування</p>
+      </div>
+    }
   </main>
 </div>
