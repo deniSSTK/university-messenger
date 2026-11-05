@@ -5,6 +5,7 @@ import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { configureApp } from '../src/configure-app.js';
+import { UUID_EXAMPLE } from '../src/core/examples/uuid.examples.js';
 import { AUTH_EXAMPLES } from '../src/modules/auth/delivery/http/dto/auth.examples.js';
 import type { OpenAPIObject } from '@nestjs/swagger';
 import { AuthService } from '../src/modules/auth/service/auth.service.js';
@@ -209,6 +210,30 @@ describe('API documentation (e2e)', () => {
       /passwordHash|tokenHash/,
     );
     expect(JSON.stringify(document)).not.toContain(process.env.JWT_SECRET);
+  });
+
+  it('uses the shared UUID example in auth, users and chats schemas', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/docs-json')
+      .expect(200);
+    const document = response.body as OpenAPIObject;
+    const uuid = { type: 'string', format: 'uuid', example: UUID_EXAMPLE };
+    const schemas = document.components?.schemas;
+
+    expect(schemas?.PublicUserDto).toMatchObject({ properties: { id: uuid } });
+    expect(schemas?.UserSearchItemDto).toMatchObject({
+      properties: { id: uuid },
+    });
+    expect(schemas?.CreateChatDto).toMatchObject({
+      properties: { recipientId: uuid },
+    });
+    expect(schemas?.SendMessageResponseDto).toMatchObject({
+      properties: { id: uuid, chatId: uuid, senderId: uuid },
+    });
+    expect(document.paths['/chats/{chatId}'].get).toMatchObject({
+      security: [{ bearer: [] }],
+      responses: { '200': {}, '400': {}, '401': {}, '404': {} },
+    });
   });
 
   afterEach(async () => {

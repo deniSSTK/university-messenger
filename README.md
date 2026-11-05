@@ -6,21 +6,18 @@ The messenger is being developed as a university semester project. The team's go
 
 ## Current Status
 
-The backend foundation, authentication API, user search API, and Angular authentication client are implemented in `main`. Direct conversations and messaging are still planned.
-
-Completed:
+The backend provides HTTP APIs for authentication, user search, private conversations, and text messaging. The Angular client uses the authentication API and displays a chat layout with sample data.
 
 - NestJS backend with typed environment validation, request validation, and Swagger documentation.
 - PostgreSQL configuration through Docker Compose, Prisma models for users, sessions, chats, and messages, and database migrations, including a username prefix search index.
 - Registration, login, refresh token rotation, logout, and current-user endpoints, with password hashing, session checks, and HttpOnly refresh cookies.
 - Protected user search by username prefix, with pagination and exclusion of the current user and deleted accounts.
-- Auth unit tests, HTTP and Swagger tests, and PostgreSQL integration scenarios. Database tests require `TEST_DATABASE_URL`.
+- Private chat creation, details, listing by recent activity, and text messages with cursor-paginated history. Routes for an individual chat check membership, and PostgreSQL enforces one active conversation per user pair.
+- Auth and chat unit tests, HTTP and Swagger tests, and PostgreSQL integration tests for concurrent chat creation, history pagination, and migration of existing conversations. Database tests require `TEST_DATABASE_URL`.
 - Angular registration and login forms connected to the API, validation and error messages, logout, in-memory access tokens, cookie-based session restoration, shared token refresh/retries, and a protected `/chats` route.
-- Responsive auth forms and a chat layout prototype, plus unit tests for forms, auth API adapters, route protection, session restoration, logout, and concurrent refresh handling. The chat list is static sample data and the search field is not connected to the API.
+- Responsive auth forms and a chat layout prototype, plus unit tests for forms, auth API adapters, route protection, session restoration, logout, and concurrent refresh handling.
 
-Still planned: connecting frontend user search, working chat/message screens, profile editing and avatars, direct conversation and message APIs, real-time delivery, message editing and deletion, read receipts, unread counts, typing indicators, CI/CD, and deployment. Backend user search test coverage also remains to be added.
-
-The next implementation areas are the backend API for direct conversations and messages, including a chat membership guard, and the frontend user search and messaging interface connected to that API.
+Frontend integration for user search and chats is pending. The roadmap also includes profile editing and avatars, real-time delivery, message editing and deletion, read receipts, unread counts, typing indicators, CI/CD, and deployment.
 
 ## Core Features
 
@@ -72,18 +69,18 @@ The core version includes direct conversations only. Group chats, channels, call
 
 | Component         | Technologies and Purpose                                   | Status                       |
 | ----------------- | ---------------------------------------------------------- | ---------------------------- |
-| Backend           | TypeScript, Node.js, NestJS - API and server logic         | Auth, user search, and Swagger implemented |
-| Database          | PostgreSQL, Prisma - data storage and migrations           | Models, migrations, and user search index implemented |
+| Backend           | TypeScript, Node.js, NestJS - API and server logic         | Auth, user search, and private chat APIs documented in Swagger |
+| Database          | PostgreSQL, Prisma - data storage and migrations           | Username prefix index and a unique index for active conversations |
 | Local Environment | Docker Compose - local PostgreSQL                          | Prepared                     |
 | Frontend          | Angular, TypeScript - responsive web interface             | Auth API integration and responsive chat layout prototype implemented |
 | Messaging         | WebSocket - real-time messages and conversation events     | Planned                      |
-| Testing           | Jest, Supertest - unit and end-to-end tests                | Auth unit, HTTP, and database scenarios |
+| Testing           | Jest, Supertest - unit and end-to-end tests                | Auth and chat unit, HTTP, and PostgreSQL scenarios |
 | Frontend Testing  | Vitest, Angular HTTP testing utilities                    | Auth, forms, guards, and refresh tests implemented |
 | CI/CD             | GitHub Actions - checks, builds, and deployment automation | Planned                      |
 
-The Angular frontend will use the backend HTTP API for accounts, profiles, conversation lists, and message history. A WebSocket connection will deliver new messages, read receipts, and typing events. PostgreSQL will store users, conversations, and messages.
+The Angular frontend uses the HTTP API for authentication. User search, conversation lists, and message history are available over HTTP for frontend integration. PostgreSQL stores users, conversations, and messages. WebSocket delivery is planned for new messages, read receipts, and typing events.
 
-Authentication and conversation membership checks must be enforced on the server for both HTTP requests and WebSocket events. Passwords must be stored as hashes. Only the author of a message will be able to edit or delete it.
+The server authenticates protected HTTP requests, checks membership for routes that access an individual conversation, and stores passwords as hashes. Planned WebSocket routes will also check authentication and membership. Planned message editing and deletion will be limited to the author.
 
 ## Repository Structure
 
@@ -93,8 +90,8 @@ Authentication and conversation membership checks must be enforced on the server
 │   ├── prisma/           # Database schema and migrations
 │   ├── src/              # Backend source code
 │   │   ├── common/       # Shared utilities
-│   │   ├── core/         # Typed configuration and shared pagination DTOs
-│   │   ├── modules/      # Auth and users feature modules
+│   │   ├── core/         # Typed configuration, shared decorators, examples, and pagination DTOs
+│   │   ├── modules/      # Auth, users, and chats feature modules
 │   │   └── prisma/       # Prisma client lifecycle and dependency injection
 │   ├── test/             # End-to-end tests
 │   ├── .env.example      # Example environment variables
@@ -134,9 +131,9 @@ HTTP controllers read input according to where the client sends it:
 
 | Decorator | Source | Example |
 | --- | --- | --- |
-| `@Body()` | JSON request body | Registration, login, or a future message payload |
-| `@Param()` | URL path parameters | A future `/messages/:id` route |
-| `@Query()` | URL query parameters | A future `/users?search=alice` request |
+| `@Body()` | JSON request body | Registration, login, or a message payload |
+| `@Param()` | URL path parameters | `chatId` in `/chats/:chatId` |
+| `@Query()` | URL query parameters | `/users?search=alice` |
 | `@Req()` | Request context | Refresh cookie or the session attached by a guard |
 
 These decorators can be combined in one endpoint. Request objects, cookies, and Express
@@ -200,7 +197,7 @@ cd backend
    ```
 
 By default, the server listens at `http://localhost:3000`, and PostgreSQL is available at `localhost:6012`.
-Authentication endpoints are available under `/auth`, and user search is available at `GET /users`; the messaging API is planned. The root `/` has no endpoint.
+Authentication endpoints are available under `/auth`, user search at `GET /users`, and private conversations and messages under `/chats`.
 
 ### Environment Configuration
 
@@ -269,6 +266,39 @@ contains only `id`, `username`, and `displayName`. Empty results and out-of-rang
 return `200` with an empty `items` array. Invalid or unexpected query parameters return
 `400`; missing or invalid authentication returns `401`.
 
+### Private Chats API
+
+All routes require `Authorization: Bearer <accessToken>`.
+
+| Endpoint | Input | Successful response |
+| --- | --- | --- |
+| `POST /chats` | JSON with `recipientId` (UUID) | `201` with the new or existing chat |
+| `GET /chats` | Optional `page` and `limit` | `200` with `{ items, meta }` |
+| `GET /chats/:chatId` | Chat UUID | `200` with `{ id, createdAt, recipient }` |
+| `POST /chats/:chatId/messages` | JSON with `text` | `201` with the saved message |
+| `GET /chats/:chatId/messages` | Optional `limit` and `cursor` | `200` with `{ items, nextCursor }` |
+
+PostgreSQL enforces one active chat per unordered user pair. The chat list includes
+`id`, `recipient`, `lastMessage`, and `lastActivityAt`, ordered by activity time and
+chat ID descending. A chat with no messages has `lastMessage: null` and uses its
+creation time as the activity time. `recipient` contains `id`, `username`, and `displayName`.
+Chat-list pagination uses the same page and limit settings as user search.
+
+Messages include `id`, `chatId`, `senderId`, `text`, and `createdAt`, along with public
+sender details and a nullable `editedAt`. Text must contain a non-whitespace character
+and may contain up to 4000 Unicode code points. Spaces and line breaks are preserved.
+History returns newest messages first, with the message ID descending as a tie-breaker.
+Pass the previous response's `nextCursor` to fetch older messages. History defaults to
+50 messages per page and supports limits from 1 to 100. `nextCursor` is null on the final page.
+
+Invalid input returns `400`, invalid or missing authentication returns `401`, and
+unknown or inaccessible chats return `404`. Creating a chat with a missing or deleted
+recipient also returns `404`.
+
+The private-pair migration backfills existing conversations from their memberships.
+It requires exactly two membership records per existing chat and at most one active
+chat per pair. PostgreSQL rolls back the migration if existing data violates either condition.
+
 ### Testing
 
 Generate Prisma Client before running checks. Service unit tests mock domain ports;
@@ -280,7 +310,7 @@ npm run build
 npx eslint "{src,apps,libs,test}/**/*.ts"
 ```
 
-To include the PostgreSQL auth scenarios, start the local database and provide a connection URL:
+To include the PostgreSQL auth and chat scenarios, start the local database and provide a connection URL:
 
 ```bash
 TEST_DATABASE_URL='postgresql://messenger-user:secret@localhost:6012/messenger-db' npm run test:e2e -- --runInBand
@@ -288,7 +318,7 @@ TEST_DATABASE_URL='postgresql://messenger-user:secret@localhost:6012/messenger-d
 
 Use credentials matching your local database. The database user needs permission to create schemas.
 Tests apply migrations inside a fresh schema and remove that schema afterward.
-Without `TEST_DATABASE_URL`, the PostgreSQL auth suite is skipped; the remaining HTTP tests still run.
+Without `TEST_DATABASE_URL`, Jest skips the PostgreSQL suites and runs the remaining HTTP tests.
 
 ### Stopping the Database
 
@@ -360,20 +390,20 @@ Key testing scenarios include registration and sign-in, access restricted to a u
 - [x] Configure Prisma and local PostgreSQL through Docker Compose.
 - [x] Design user, session, conversation, and message models.
 - [x] Implement registration, login, refresh, logout, and current-user endpoints.
-- [x] Document auth and user search endpoints in Swagger.
+- [x] Document auth, user search, and private chat endpoints in Swagger.
 - [x] Implement user search by username prefix with pagination.
-- [x] Add auth unit tests, HTTP/Swagger tests, and PostgreSQL integration scenarios.
+- [x] Add auth and chat unit tests, HTTP and Swagger tests, and PostgreSQL integration scenarios.
 - [x] Implement Angular registration, login, logout, session restoration, and protected routing.
 - [x] Add a responsive chat layout prototype and frontend auth/session tests.
 - [x] Merge the Angular authentication client into `main`.
+- [x] Implement the private chats API with text messages and conversation history.
 - [ ] Connect frontend user search to the existing API.
 - [ ] Implement profile editing.
-- [ ] Implement direct conversations.
-- [ ] Add real-time messaging and conversation history.
+- [ ] Add real-time message delivery.
 - [ ] Add message editing, deletion, and read receipts.
 - [ ] Add typing indicators and unread message counts.
 - [ ] Replace sample chats with real data and implement responsive conversation/history/message screens connected to the backend.
-- [ ] Add user search tests and cover conversation and messaging scenarios as they are implemented.
+- [ ] Add user search tests.
 - [ ] Configure CI/CD and deploy the application over HTTPS.
 - [ ] Add image and file attachments if time permits.
 
