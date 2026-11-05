@@ -46,6 +46,10 @@ model Chat {
   updatedAt DateTime  @updatedAt @db.Timestamptz(3)
   deletedAt DateTime? @db.Timestamptz(3)
 
+  /// The SQL migration enforces canonical ordering and uniqueness for active chats.
+  privateUserAId String @db.Uuid
+  privateUserBId String @db.Uuid
+
   members  ChatMember[]
   messages Message[]
 }

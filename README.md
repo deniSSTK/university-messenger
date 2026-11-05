@@ -16,9 +16,9 @@ Completed:
 - Protected user search by username prefix, with pagination and exclusion of the current user and deleted accounts.
 - Auth unit tests, HTTP and Swagger tests, and PostgreSQL integration scenarios. Database tests require `TEST_DATABASE_URL`.
 - Angular registration and login forms connected to the API, validation and error messages, logout, in-memory access tokens, cookie-based session restoration, shared token refresh/retries, and a protected `/chats` route.
-- Responsive auth forms and a chat layout prototype, plus unit tests for forms, auth API adapters, route protection, session restoration, logout, and concurrent refresh handling. User search is connected to the API; the chat/message screens use a temporary browser mock repository while their backend API is being developed.
+- Responsive auth forms and a chat layout prototype, plus unit tests for forms, auth API adapters, route protection, session restoration, logout, and concurrent refresh handling. The chat list is static sample data and the search field is not connected to the API.
 
-Still planned: connecting the chat/message screens to the real backend, profile editing and avatars, direct conversation and message APIs, real-time delivery, message editing and deletion, read receipts, unread counts, typing indicators, CI/CD, and deployment. Backend user search test coverage also remains to be added.
+Still planned: connecting frontend user search, working chat/message screens, profile editing and avatars, direct conversation and message APIs, real-time delivery, message editing and deletion, read receipts, unread counts, typing indicators, CI/CD, and deployment. Backend user search test coverage also remains to be added.
 
 The next implementation areas are the backend API for direct conversations and messages, including a chat membership guard, and the frontend user search and messaging interface connected to that API.
 
@@ -366,8 +366,7 @@ Key testing scenarios include registration and sign-in, access restricted to a u
 - [x] Implement Angular registration, login, logout, session restoration, and protected routing.
 - [x] Add a responsive chat layout prototype and frontend auth/session tests.
 - [x] Merge the Angular authentication client into `main`.
-- [x] Connect frontend user search to the existing API.
-- [x] Add temporary mock conversation/history/message screens with pagination, drafts, mobile navigation, and tests.
+- [ ] Connect frontend user search to the existing API.
 - [ ] Implement profile editing.
 - [ ] Implement direct conversations.
 - [ ] Add real-time messaging and conversation history.
