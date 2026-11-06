@@ -1,0 +1,26 @@
+import { InjectionToken } from '@angular/core';
+import type { Observable } from 'rxjs';
+
+interface SearchUsersRepositoryInput {
+  query: string;
+  page: number;
+  limit: number;
+}
+interface UserRepositoryResult {
+  id: string;
+  username: string;
+  displayName: string;
+}
+interface SearchUsersRepositoryResult {
+  users: UserRepositoryResult[];
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+class UsersRepositoryError extends Error {}
+interface UsersRepository {
+  search(input: SearchUsersRepositoryInput): Observable<SearchUsersRepositoryResult>;
+}
+const USERS_REPOSITORY = new InjectionToken<UsersRepository>('USERS_REPOSITORY');
+export { USERS_REPOSITORY, UsersRepositoryError };
+export type { UsersRepository, SearchUsersRepositoryInput, SearchUsersRepositoryResult };
