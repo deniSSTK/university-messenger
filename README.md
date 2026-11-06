@@ -16,7 +16,7 @@ Completed:
 - Protected user search by username prefix, with pagination and exclusion of the current user and deleted accounts.
 - Auth unit tests, HTTP and Swagger tests, and PostgreSQL integration scenarios. Database tests require `TEST_DATABASE_URL`.
 - Angular registration and login forms connected to the API, validation and error messages, logout, in-memory access tokens, cookie-based session restoration, shared token refresh/retries, and a protected `/chats` route.
-- Responsive auth forms and a chat layout prototype, plus unit tests for forms, auth API adapters, route protection, session restoration, logout, and concurrent refresh handling. User search, chat lists, conversation details, history, and sends are connected to the real backend through repository adapters.
+- Responsive auth forms and messaging screens, with user search, chat lists, conversation details, history, and sending connected to the HTTP API. Frontend tests cover auth, session handling, and chat interactions.
 
 Still planned: profile editing and avatars, real-time delivery, message editing and deletion, read receipts, unread counts, typing indicators, CI/CD, and deployment. Backend user search test coverage also remains to be added.
 
@@ -72,16 +72,16 @@ The core version includes direct conversations only. Group chats, channels, call
 
 | Component         | Technologies and Purpose                                   | Status                       |
 | ----------------- | ---------------------------------------------------------- | ---------------------------- |
-| Backend           | TypeScript, Node.js, NestJS - API and server logic         | Auth, user search, and Swagger implemented |
+| Backend           | TypeScript, Node.js, NestJS - API and server logic         | Auth, user search, and private chat APIs documented in Swagger |
 | Database          | PostgreSQL, Prisma - data storage and migrations           | Models, migrations, and user search index implemented |
 | Local Environment | Docker Compose - local PostgreSQL                          | Prepared                     |
-| Frontend          | Angular, TypeScript - responsive web interface             | Auth API integration and responsive chat layout prototype implemented |
+| Frontend          | Angular, TypeScript - responsive web interface             | Auth, user search, and direct messaging connected to the API |
 | Messaging         | WebSocket - real-time messages and conversation events     | Planned                      |
 | Testing           | Jest, Supertest - unit and end-to-end tests                | Auth unit, HTTP, and database scenarios |
-| Frontend Testing  | Vitest, Angular HTTP testing utilities                    | Auth, forms, guards, and refresh tests implemented |
+| Frontend Testing  | Vitest, Angular HTTP testing utilities                    | Auth, search, and chat tests |
 | CI/CD             | GitHub Actions - checks, builds, and deployment automation | Planned                      |
 
-The Angular frontend will use the backend HTTP API for accounts, profiles, conversation lists, and message history. A WebSocket connection will deliver new messages, read receipts, and typing events. PostgreSQL will store users, conversations, and messages.
+The Angular frontend uses HTTP for authentication, user search, and direct messaging. PostgreSQL stores users, conversations, and messages. WebSocket delivery is planned for new messages, read receipts, and typing events.
 
 Authentication and conversation membership checks must be enforced on the server for both HTTP requests and WebSocket events. Passwords must be stored as hashes. Only the author of a message will be able to edit or delete it.
 
@@ -94,22 +94,21 @@ Authentication and conversation membership checks must be enforced on the server
 │   ├── src/              # Backend source code
 │   │   ├── common/       # Shared utilities
 │   │   ├── core/         # Typed configuration and shared pagination DTOs
-│   │   ├── modules/      # Auth and users feature modules
+│   │   ├── modules/      # Auth, users, and chats feature modules
 │   │   └── prisma/       # Prisma client lifecycle and dependency injection
 │   ├── test/             # End-to-end tests
 │   ├── .env.example      # Example environment variables
 │   └── docker-compose.yml
-├── frontend/             # Angular client with auth and a chat layout prototype
+├── frontend/             # Angular client with auth, user search, and direct messaging
 │   ├── src/app/core/     # Shared HTTP client, session handling, and route guards
-│   ├── src/app/domain/   # Auth feature and chat UI prototype
-│   ├── src/environments/ # Development and production API configuration
-│   └── README.md         # Frontend setup and authentication details
+│   ├── src/app/domain/   # Auth, users, and chats features
+│   └── src/environments/ # Development and production API configuration
 ├── AGENTS.md             # Repository-wide development rules
 ├── LICENSE
 └── README.md
 ```
 
-The backend and frontend share a single repository and are both available in `main`. Install dependencies and run commands from each application's directory. See [frontend/README.md](frontend/README.md) for additional client setup and authentication details.
+The backend and frontend share a single repository. Install dependencies and run commands from each application's directory.
 
 ## Backend Module Structure
 
@@ -134,9 +133,9 @@ HTTP controllers read input according to where the client sends it:
 
 | Decorator | Source | Example |
 | --- | --- | --- |
-| `@Body()` | JSON request body | Registration, login, or a future message payload |
-| `@Param()` | URL path parameters | A future `/messages/:id` route |
-| `@Query()` | URL query parameters | A future `/users?search=alice` request |
+| `@Body()` | JSON request body | Registration, login, or a message payload |
+| `@Param()` | URL path parameters | `chatId` in `/chats/:chatId` |
+| `@Query()` | URL query parameters | `/users?search=alice` |
 | `@Req()` | Request context | Refresh cookie or the session attached by a guard |
 
 These decorators can be combined in one endpoint. Request objects, cookies, and Express
@@ -200,7 +199,7 @@ cd backend
    ```
 
 By default, the server listens at `http://localhost:3000`, and PostgreSQL is available at `localhost:6012`.
-Authentication endpoints are available under `/auth`, and user search is available at `GET /users`; the messaging API is planned. The root `/` has no endpoint.
+Authentication endpoints are available under `/auth`, user search at `GET /users`, and private conversations and messages under `/chats`.
 
 ### Environment Configuration
 
@@ -280,7 +279,7 @@ npm run build
 npx eslint "{src,apps,libs,test}/**/*.ts"
 ```
 
-To include the PostgreSQL auth scenarios, start the local database and provide a connection URL:
+To include the PostgreSQL auth and chat scenarios, start the local database and provide a connection URL:
 
 ```bash
 TEST_DATABASE_URL='postgresql://messenger-user:secret@localhost:6012/messenger-db' npm run test:e2e -- --runInBand
@@ -288,7 +287,7 @@ TEST_DATABASE_URL='postgresql://messenger-user:secret@localhost:6012/messenger-d
 
 Use credentials matching your local database. The database user needs permission to create schemas.
 Tests apply migrations inside a fresh schema and remove that schema afterward.
-Without `TEST_DATABASE_URL`, the PostgreSQL auth suite is skipped; the remaining HTTP tests still run.
+Without `TEST_DATABASE_URL`, Jest skips the PostgreSQL suites and runs the remaining HTTP tests.
 
 ### Stopping the Database
 
@@ -329,7 +328,6 @@ npm start
 
 Open [http://localhost:4200](http://localhost:4200) with the backend running at `http://localhost:3000`.
 The app provides `/login`, `/register`, protected `/chats`, and direct conversation URLs at `/chats/:chatId`. Conversation and message data is loaded from PostgreSQL through the backend API.
-Registration and login call the backend; the chat entries are static examples, and the search input has no API integration yet.
 
 Configure `apiUrl` in `frontend/src/environments/environment.development.ts` for local development
 and `frontend/src/environments/environment.ts` for production. The backend's `FRONTEND_ORIGIN`
@@ -369,7 +367,7 @@ Key testing scenarios include registration and sign-in, access restricted to a u
 - [x] Connect frontend user search to the existing API.
 - [ ] Implement profile editing.
 - [x] Implement direct conversations.
-- [ ] Add real-time messaging and conversation history.
+- [ ] Add real-time message delivery.
 - [ ] Add message editing, deletion, and read receipts.
 - [ ] Add typing indicators and unread message counts.
 - [x] Replace sample chats with real data and implement responsive conversation/history/message screens connected to the backend.
@@ -414,8 +412,9 @@ continues to coordinate refresh requests.
 
 Search waits 300 ms after typing, accepts a leading `@`, and cancels obsolete requests.
 Chat lists load in pages of 20 and history in pages of 30. Older-history loading keeps
-the viewing position, while refresh fills intermediate pages to the latest already-known
-message. Enter sends, Shift+Enter adds a line, and pending sends cannot be duplicated.
+the viewing position. Refresh fills intermediate pages back to the latest message fetched
+from history and merges the results with messages already on screen. Enter sends,
+Shift+Enter adds a line, and messages may contain up to 4000 Unicode code points.
 Drafts are kept separately per account/chat. The sender sees the saved message; the
 recipient sees changes on open or refresh. Mobile shows either the list or the dialog
 with a back action. No messages or tokens are persisted by the frontend in localStorage.
@@ -440,7 +439,7 @@ scenario also checked reusing the same dialog from both participants, outsider
 their conversations/messages, and the separate verification database were removed
 after the checks; existing local accounts were preserved.
 
-Validation: frontend build, TypeScript test checking, and 82 frontend tests pass;
-87 backend unit tests and 37 backend e2e tests pass. Angular reports the existing
-component-style size warning. PostgreSQL connections in the local verification
-run use UTC (`PGOPTIONS=-c timezone=UTC`); use UTC database sessions consistently.
+The 2026-11-05 verification run passed the frontend build, TypeScript test checking,
+82 frontend tests, 87 backend unit tests, and 37 backend e2e tests. Angular reported
+a component-style size warning. The PostgreSQL connections used UTC
+(`PGOPTIONS=-c timezone=UTC`).

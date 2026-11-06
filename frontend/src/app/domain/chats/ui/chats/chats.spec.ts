@@ -213,6 +213,27 @@ describe('chat screen', () => {
     await settle();
     expect(api.send).toHaveBeenCalledTimes(1);
   });
+
+  it('uses Unicode code points for the composer limit and counter', async () => {
+    await select();
+    const element: HTMLElement = fixture.nativeElement;
+    const text = '😀'.repeat(4000);
+
+    component.draftChanged(text + 'a');
+    fixture.detectChanges();
+    expect(element.querySelector('.character-count')?.textContent).toContain('4001 / 4000');
+    expect(element.querySelector('textarea')?.getAttribute('aria-invalid')).toBe('true');
+    await component.send();
+    expect(api.send).not.toHaveBeenCalled();
+
+    component.draftChanged(text);
+    fixture.detectChanges();
+    expect(element.querySelector('.character-count')?.textContent).toContain('4000 / 4000');
+    expect(element.querySelector('textarea')?.getAttribute('aria-invalid')).toBe('false');
+    await component.send();
+    expect(api.send).toHaveBeenCalledWith('a', text);
+  });
+
   it('renders text safely and distinguishes own messages', async () => {
     api.history.mockResolvedValueOnce({
       messages: [message('unsafe', '<img src=x onerror=alert(1)>\nnext line')],
@@ -325,6 +346,59 @@ describe('chat screen', () => {
     expect(component.nextBefore()).toBe('oldest-loaded');
     expect(component.messages()).toHaveLength(2);
   });
+
+  it('refreshes back to the latest fetched message even after sending', async () => {
+    const known = message('00');
+    const incoming = Array.from({ length: 40 }, (_, index) => ({
+      ...message(String(index + 1).padStart(2, '0')),
+      senderId: peer.id,
+    }));
+    const sent = message('41', 'my reply');
+    api.history.mockResolvedValueOnce({ messages: [known], nextBefore: 'oldest-loaded' });
+    await select();
+
+    component.draftChanged(sent.text);
+    api.send.mockResolvedValueOnce(sent);
+    await component.send();
+
+    api.refreshHistory.mockResolvedValueOnce({
+      messages: [known, ...incoming, sent],
+      nextBefore: 'intermediate-page',
+    });
+    await component.refreshMessages();
+
+    expect(api.refreshHistory).toHaveBeenLastCalledWith('a', known.id);
+    expect(component.messages()).toEqual([known, ...incoming, sent]);
+    expect(component.nextBefore()).toBe('oldest-loaded');
+
+    api.refreshHistory.mockResolvedValueOnce({ messages: [sent], nextBefore: 'latest-page' });
+    await component.refreshMessages();
+    expect(api.refreshHistory).toHaveBeenLastCalledWith('a', sent.id);
+  });
+
+  it('keeps a saved send when a concurrent refresh started from an empty dialog', async () => {
+    await select();
+    const refresh = deferred<HistoryPage>();
+    api.refreshHistory.mockReturnValueOnce(refresh.promise);
+    const refreshing = component.refreshMessages();
+
+    const sent = message('first', 'my first message');
+    component.draftChanged(sent.text);
+    api.send.mockResolvedValueOnce(sent);
+    await component.send();
+
+    refresh.resolve({ messages: [], nextBefore: null });
+    await refreshing;
+    expect(component.messages()).toEqual([sent]);
+    expect(component.draft()).toBe('');
+
+    api.refreshHistory.mockResolvedValueOnce({ messages: [sent], nextBefore: 'older-page' });
+    await component.refreshMessages();
+    expect(api.refreshHistory).toHaveBeenLastCalledWith('a', null);
+    expect(component.messages()).toEqual([sent]);
+    expect(component.nextBefore()).toBe('older-page');
+  });
+
   it('groups consecutive messages by sender and shows dates at day boundaries', async () => {
     api.history.mockResolvedValueOnce({
       messages: [

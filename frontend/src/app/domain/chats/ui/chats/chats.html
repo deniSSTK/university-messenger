@@ -371,7 +371,7 @@
               placeholder="Написати повідомлення…"
               [value]="draft()"
               [disabled]="sending()"
-              [attr.aria-invalid]="draft().length > 4000"
+              [attr.aria-invalid]="draftTooLong()"
               aria-describedby="message-help"
               (input)="draftChanged(inputValue($event))"
               (keydown)="composerKey($event)"
@@ -388,16 +388,17 @@
                 <app-chat-icon name="send" />
               }</button
             ><span id="message-help" class="sr-only"
-              >Enter надсилає, Shift+Enter додає рядок. Максимум 4000 символів.</span
+              >Enter надсилає, Shift+Enter додає рядок. Максимум {{ messageTextMaxLength }}
+              символів.</span
             >
             @if (sending()) {
               <span class="sr-only" role="status">Надсилаємо повідомлення…</span>
             }
           </form>
-          @if (draft().length > 3600) {
-            <p class="character-count" [class.error]="draft().length > 4000" role="status">
-              {{ draft().length }} / 4000
-              @if (draft().length > 4000) {
+          @if (draftLength() > 3600) {
+            <p class="character-count" [class.error]="draftTooLong()" role="status">
+              {{ draftLength() }} / {{ messageTextMaxLength }}
+              @if (draftTooLong()) {
                 · Скоротіть повідомлення
               }
             </p>

@@ -1,4 +1,6 @@
 import { Injectable, inject } from '@angular/core';
+import { countCodePoints } from '../../../core/text/unicode';
+import { MESSAGE_TEXT_MAX_LENGTH } from '../chats.constants';
 import { CHATS_REPOSITORY, ChatRepositoryError } from '../repository/chats.repository';
 import type {
   ChatMessageRecord,
@@ -86,7 +88,7 @@ class ChatService {
     return { messages: [...unique.values()], nextBefore: page.nextBefore };
   }
   send(chatId: string, text: string): Promise<ChatMessage> {
-    if (!text.trim() || text.length > 4000) {
+    if (!text.trim() || countCodePoints(text) > MESSAGE_TEXT_MAX_LENGTH) {
       return Promise.reject(new ChatError('validation'));
     }
 

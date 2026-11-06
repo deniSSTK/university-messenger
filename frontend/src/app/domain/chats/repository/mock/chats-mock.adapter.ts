@@ -1,7 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { HttpClient } from '../../../../core/http/http-client.service';
+import { countCodePoints } from '../../../../core/text/unicode';
 import { environment } from '../../../../../environments/environment';
+import { MESSAGE_TEXT_MAX_LENGTH } from '../../chats.constants';
 import { ChatRepositoryError } from '../chats.repository';
 import type {
   ChatsRepository,
@@ -150,7 +152,7 @@ class ChatsMockAdapter implements ChatsRepository {
   async send(chatId: string, text: string) {
     const viewer = await this.viewer();
 
-    if (!text.trim() || text.length > 4000) {
+    if (!text.trim() || countCodePoints(text) > MESSAGE_TEXT_MAX_LENGTH) {
       throw new ChatRepositoryError('validation');
     }
 

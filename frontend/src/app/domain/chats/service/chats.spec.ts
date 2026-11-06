@@ -9,11 +9,24 @@ describe('chat use cases', () => {
       providers: [{ provide: CHATS_REPOSITORY, useValue: { send } }],
     });
     const service = TestBed.inject(ChatService);
-    for (const text of ['', ' \n ', 'x'.repeat(4001)]) {
+    for (const text of ['', ' \n ', 'x'.repeat(4001), '😀'.repeat(4001)]) {
       await expect(service.send('chat', text)).rejects.toEqual(new ChatError('validation'));
     }
     expect(send).not.toHaveBeenCalled();
   });
+
+  it('accepts a message with 4000 Unicode code points', async () => {
+    const text = '😀'.repeat(4000);
+    const message = { id: 'm1', senderId: 'me', text, createdAt: '2026-11-03T00:00:00Z' };
+    const send = vi.fn().mockResolvedValue(message);
+    TestBed.configureTestingModule({
+      providers: [{ provide: CHATS_REPOSITORY, useValue: { send } }],
+    });
+
+    await expect(TestBed.inject(ChatService).send('chat', text)).resolves.toEqual(message);
+    expect(send).toHaveBeenCalledWith('chat', text);
+  });
+
   it('preserves message whitespace and converts repository errors to service errors', async () => {
     const message = {
       id: 'm1',

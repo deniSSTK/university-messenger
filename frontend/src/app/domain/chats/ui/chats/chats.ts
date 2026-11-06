@@ -10,9 +10,11 @@ import {
 import { ActivatedRoute, Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject, catchError, map, of, switchMap, timer } from 'rxjs';
+import { countCodePoints } from '../../../../core/text/unicode';
 import { Auth } from '../../../auth/service/auth';
 import { authErrorMessage } from '../../../auth/ui/auth-form.utils';
 import { Users, UserSearchValidationError } from '../../../users/service/users';
+import { MESSAGE_TEXT_MAX_LENGTH } from '../../chats.constants';
 import { ChatService, ChatError } from '../../service/chats';
 import type { ChatPerson, ChatMessage, Conversation } from '../../service/chats.types';
 import { ChatDrafts } from './chat-drafts';
@@ -72,6 +74,7 @@ class Chats {
   @ViewChild('messageViewport') private viewport?: ElementRef<HTMLElement>;
   @ViewChild('composerInput') private composerInput?: ElementRef<HTMLTextAreaElement>;
   private historyRetry: 'older' | 'refresh' = 'refresh';
+  private latestFetchedMessageId: string | null = null;
   private listRetryMore = false;
   readonly accountMenuOpen = signal(false);
   readonly chatMenuOpen = signal(false);
@@ -119,9 +122,11 @@ class Chats {
   readonly errorMessage = signal('');
   readonly sending = computed(() => this.drafts.pending().has(this.selectedId() ?? ''));
   readonly sendError = computed(() => this.drafts.errors().get(this.draftKey()) ?? '');
+  readonly messageTextMaxLength = MESSAGE_TEXT_MAX_LENGTH;
+  readonly draftLength = computed(() => countCodePoints(this.draft()));
+  readonly draftTooLong = computed(() => this.draftLength() > this.messageTextMaxLength);
   readonly canSend = computed(
-    () =>
-      !!this.active() && !!this.draft().trim() && this.draft().length <= 4000 && !this.sending(),
+    () => !!this.active() && !!this.draft().trim() && !this.draftTooLong() && !this.sending(),
   );
 
   constructor() {
@@ -281,6 +286,7 @@ class Chats {
     this.active.set(null);
     this.messages.set([]);
     this.nextBefore.set(null);
+    this.latestFetchedMessageId = null;
     this.chatError.set('');
     this.historyError.set('');
     this.historyLoading.set(false);
@@ -306,6 +312,7 @@ class Chats {
       this.active.set(conversationView(chat));
       this.messages.update((current) => mergeMessages(current, history.messages.map(messageView)));
       this.nextBefore.set(history.nextBefore);
+      this.latestFetchedMessageId = history.messages.at(-1)?.id ?? null;
       this.draft.set(this.drafts.get(viewer.id, chatId));
       this.afterRender(chatId, () => {
         this.scrollToBottom();
@@ -380,13 +387,13 @@ class Chats {
 
     const generation = this.chatGeneration;
     const viewport = this.viewport?.nativeElement;
-    const latestKnownId = this.messages().at(-1)?.id ?? null;
+    const latestFetchedMessageId = this.latestFetchedMessageId;
     this.historyRetry = 'refresh';
     this.historyLoading.set(true);
     this.historyError.set('');
 
     try {
-      const result = await this.service.refreshHistory(chatId, latestKnownId);
+      const result = await this.service.refreshHistory(chatId, latestFetchedMessageId);
 
       if (!this.current(generation, chatId)) {
         return;
@@ -395,12 +402,12 @@ class Chats {
       const atBottom =
         !!viewport && viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 40;
       const anchor = this.captureAnchor();
-      const overlaps = result.messages.some((message) => message.id === latestKnownId);
+      const overlaps = result.messages.some((message) => message.id === latestFetchedMessageId);
 
-      if (overlaps) {
-        this.messages.update((current) => mergeMessages(current, result.messages.map(messageView)));
-      } else {
-        this.messages.set(result.messages.map(messageView));
+      this.messages.update((current) => mergeMessages(current, result.messages.map(messageView)));
+      this.latestFetchedMessageId = result.messages.at(-1)?.id ?? latestFetchedMessageId;
+
+      if (!overlaps) {
         this.nextBefore.set(result.nextBefore);
       }
 
