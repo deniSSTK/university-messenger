@@ -18,9 +18,19 @@ interface SearchUsersRepositoryResult {
   totalPages: number;
 }
 class UsersRepositoryError extends Error {}
+interface UpdateProfileRepositoryInput {
+  displayName: string;
+  avatarUrl?: string | null;
+}
 interface UsersRepository {
+  updateProfile(input: UpdateProfileRepositoryInput): Observable<void>;
   search(input: SearchUsersRepositoryInput): Observable<SearchUsersRepositoryResult>;
 }
 const USERS_REPOSITORY = new InjectionToken<UsersRepository>('USERS_REPOSITORY');
 export { USERS_REPOSITORY, UsersRepositoryError };
-export type { UsersRepository, SearchUsersRepositoryInput, SearchUsersRepositoryResult };
+export type {
+  UsersRepository,
+  SearchUsersRepositoryInput,
+  SearchUsersRepositoryResult,
+  UpdateProfileRepositoryInput,
+};

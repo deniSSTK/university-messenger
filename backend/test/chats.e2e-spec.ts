@@ -1,3 +1,11 @@
+import { WebSocketEventType } from '@university-messenger/events';
+import { MediaMigration } from '../src/modules/media/service/migrate-media.js';
+import { PrismaLegacyMediaRepository } from '../src/modules/media/repository/prisma-legacy-media.repository.js';
+import type { ObjectStorage } from '../src/modules/media/domain/object-storage.port.js';
+import { OBJECT_STORAGE } from '../src/modules/media/domain/object-storage.port.js';
+import { MemoryObjectStorage } from './memory-object-storage.js';
+import { WebSocket } from 'ws';
+import { once } from 'node:events';
 import { type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -129,6 +137,8 @@ describeDatabase('Chats API (PostgreSQL)', () => {
     await prisma.$connect();
 
     const module = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(OBJECT_STORAGE)
+      .useValue(new MemoryObjectStorage())
       .overrideProvider(PrismaService)
       .useValue(prisma)
       .compile();
@@ -523,6 +533,375 @@ describeDatabase('Chats API (PostgreSQL)', () => {
       .get(`/chats/${chat.id}`)
       .set('Authorization', `Bearer ${firstUser.accessToken}`)
       .expect(404);
+  });
+
+  async function register(username: string): Promise<AuthResponse> {
+    const response = await request(app.getHttpServer())
+      .post('/auth/register')
+      .send({
+        email: `${username}@example.com`,
+        username,
+        displayName: username,
+        password: 'valid-password123',
+      })
+      .expect(201);
+
+    return responseBody<AuthResponse>(response);
+  }
+
+  it('enforces message authorship, read boundaries, unread counts and private attachment access', async () => {
+    const alice = await register('alice');
+    const bob = await register('bob');
+    const outsider = await register('outsider');
+    const chat = responseBody<ChatResponse>(
+      await request(app.getHttpServer())
+        .post('/chats')
+        .set('Authorization', `Bearer ${alice.accessToken}`)
+        .send({ recipientId: bob.user.id })
+        .expect(201),
+    );
+    const send = async (text: string) =>
+      responseBody<MessageResponse>(
+        await request(app.getHttpServer())
+          .post(`/chats/${chat.id}/messages`)
+          .set('Authorization', `Bearer ${alice.accessToken}`)
+          .send({ text })
+          .expect(201),
+      );
+    const first = await send('First');
+    const second = await send('Second');
+    await request(app.getHttpServer())
+      .patch(`/chats/${chat.id}/messages/${first.id}`)
+      .set('Authorization', `Bearer ${bob.accessToken}`)
+      .send({ text: 'Forged' })
+      .expect(404);
+    await request(app.getHttpServer())
+      .delete(`/chats/${chat.id}/messages/${first.id}`)
+      .set('Authorization', `Bearer ${outsider.accessToken}`)
+      .expect(404);
+    const edited = await request(app.getHttpServer())
+      .patch(`/chats/${chat.id}/messages/${first.id}`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({ text: 'Updated' })
+      .expect(200);
+    expect(
+      responseBody<{ editedAt: string; text: string }>(edited),
+    ).toMatchObject({
+      text: 'Updated',
+      editedAt: expect.any(String) as unknown,
+    });
+    await request(app.getHttpServer())
+      .post(`/chats/${chat.id}/read`)
+      .set('Authorization', `Bearer ${bob.accessToken}`)
+      .send({ throughMessageId: first.id })
+      .expect(204);
+    expect(
+      (await prisma.message.findUniqueOrThrow({ where: { id: first.id } }))
+        .readAt,
+    ).not.toBeNull();
+    expect(
+      (await prisma.message.findUniqueOrThrow({ where: { id: second.id } }))
+        .readAt,
+    ).toBeNull();
+    const list = await request(app.getHttpServer())
+      .get('/chats')
+      .set('Authorization', `Bearer ${bob.accessToken}`)
+      .expect(200);
+    expect(
+      responseBody<{ items: { unreadCount: number }[] }>(list).items[0]
+        .unreadCount,
+    ).toBe(1);
+    const file = responseBody<MessageResponse>(
+      await request(app.getHttpServer())
+        .post(`/chats/${chat.id}/attachments`)
+        .set('Authorization', `Bearer ${alice.accessToken}`)
+        .send({
+          name: 'notes.txt',
+          mediaType: 'text/plain',
+          content: 'SGVsbG8=',
+        })
+        .expect(201),
+    );
+    await request(app.getHttpServer())
+      .get(`/chats/${chat.id}/messages/${file.id}/attachment`)
+      .set('Authorization', `Bearer ${bob.accessToken}`)
+      .expect(200)
+      .expect({
+        name: 'notes.txt',
+        mediaType: 'text/plain',
+        content: 'SGVsbG8=',
+      });
+    await request(app.getHttpServer())
+      .get(`/chats/${chat.id}/messages/${file.id}/attachment`)
+      .set('Authorization', `Bearer ${outsider.accessToken}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .delete(`/chats/${chat.id}/messages/${file.id}`)
+      .set('Authorization', `Bearer ${bob.accessToken}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .delete(`/chats/${chat.id}/messages/${file.id}`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .expect(204);
+    await request(app.getHttpServer())
+      .get(`/chats/${chat.id}/messages/${file.id}/attachment`)
+      .set('Authorization', `Bearer ${bob.accessToken}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .delete(`/chats/${chat.id}/messages/${first.id}`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .expect(204);
+    const history = responseBody<MessageHistoryResponse>(
+      await request(app.getHttpServer())
+        .get(`/chats/${chat.id}/messages`)
+        .set('Authorization', `Bearer ${bob.accessToken}`)
+        .expect(200),
+    );
+    expect(history.items.map((message) => message.id)).toEqual([second.id]);
+  });
+
+  it('updates a profile persistently and validates username search exclusions and literal underscores', async () => {
+    const alice = await register('al_a');
+    const bob = await register('al_b');
+    await register('alba');
+    const deleted = await register('al_deleted');
+    await prisma.user.update({
+      where: { id: deleted.user.id },
+      data: { deletedAt: new Date() },
+    });
+    const result = await request(app.getHttpServer())
+      .get('/users')
+      .query({ search: ' @AL_ ', limit: 1 })
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .expect(200);
+    expect(
+      responseBody<{ items: { id: string }[]; meta: { total: number } }>(
+        result,
+      ),
+    ).toMatchObject({ items: [{ id: bob.user.id }], meta: { total: 1 } });
+    await request(app.getHttpServer())
+      .get('/users')
+      .query({ search: 'al', unexpected: 'x' })
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/users')
+      .query({ search: 'al' })
+      .expect(401);
+    const avatarUrl =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=';
+    await request(app.getHttpServer())
+      .patch('/users/me')
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({ displayName: ' Alice Updated ', avatarUrl })
+      .expect(200);
+    const me = responseBody<{ displayName: string; avatarUrl: string }>(
+      await request(app.getHttpServer())
+        .get('/auth/me')
+        .set('Authorization', `Bearer ${alice.accessToken}`)
+        .expect(200),
+    );
+    expect(me.displayName).toBe('Alice Updated');
+    expect(me.avatarUrl).toMatch(/^https:\/\/storage\.example\.com\/avatars\//);
+    const saved = await prisma.user.findUniqueOrThrow({
+      where: { id: alice.user.id },
+    });
+    expect(saved.avatarUrl).toBeNull();
+    expect(saved.avatarKey).toBeTruthy();
+    expect('avatarKey' in me).toBe(false);
+    await request(app.getHttpServer())
+      .patch('/users/me')
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({ displayName: 'Name only' })
+      .expect(200);
+    expect(
+      (await prisma.user.findUniqueOrThrow({ where: { id: alice.user.id } }))
+        .avatarKey,
+    ).toBe(saved.avatarKey);
+    await request(app.getHttpServer())
+      .patch('/users/me')
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({ displayName: 'Name only', avatarUrl: null })
+      .expect(200);
+    expect(
+      (await prisma.user.findUniqueOrThrow({ where: { id: alice.user.id } }))
+        .avatarKey,
+    ).toBeNull();
+    await expect(
+      app.get<ObjectStorage>(OBJECT_STORAGE).get(saved.avatarKey!),
+    ).rejects.toThrow('Missing object');
+
+    await request(app.getHttpServer())
+      .patch('/users/me')
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({
+        displayName: 'Alice',
+        avatarUrl: 'data:image/png;base64,SGVsbG8=',
+      })
+      .expect(400);
+    await request(app.getHttpServer())
+      .patch('/users/me')
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({ displayName: 'Alice', avatarUrl: null, userId: bob.user.id })
+      .expect(400);
+  });
+
+  it('moves existing binary attachments and data-URL avatars into object storage without losing content', async () => {
+    const alice = await register('legacy_alice');
+    const bob = await register('legacy_bob');
+    const chat = responseBody<ChatResponse>(
+      await request(app.getHttpServer())
+        .post('/chats')
+        .set('Authorization', `Bearer ${alice.accessToken}`)
+        .send({ recipientId: bob.user.id })
+        .expect(201),
+    );
+    const file = await prisma.message.create({
+      data: {
+        chatId: chat.id,
+        senderId: alice.user.id,
+        text: 'old.txt',
+        fileName: 'old.txt',
+        fileType: 'text/plain',
+        fileSize: 3,
+        fileData: new Uint8Array([65, 66, 67]),
+      },
+    });
+    const avatar =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=';
+    await prisma.user.update({
+      where: { id: alice.user.id },
+      data: { avatarUrl: avatar },
+    });
+    const storage = app.get<ObjectStorage>(OBJECT_STORAGE);
+    const migration = new MediaMigration(
+      new PrismaLegacyMediaRepository(prisma),
+      storage,
+    );
+    await expect(migration.run()).resolves.toEqual({
+      attachments: 1,
+      avatars: 1,
+    });
+    await expect(migration.run()).resolves.toEqual({
+      attachments: 0,
+      avatars: 0,
+    });
+    const moved = await prisma.message.findUniqueOrThrow({
+      where: { id: file.id },
+    });
+    expect(moved.fileData).toBeNull();
+    expect(moved.fileKey).toBeTruthy();
+    await expect(storage.get(moved.fileKey!)).resolves.toEqual(
+      new Uint8Array([65, 66, 67]),
+    );
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { id: alice.user.id },
+    });
+    expect(user.avatarUrl).toBeNull();
+    expect(user.avatarKey).toBeTruthy();
+    await request(app.getHttpServer())
+      .get(`/chats/${chat.id}/messages/${file.id}/attachment`)
+      .set('Authorization', `Bearer ${bob.accessToken}`)
+      .expect(200)
+      .expect({ name: 'old.txt', mediaType: 'text/plain', content: 'QUJD' });
+  });
+
+  it('delivers authorized WebSocket changes and typing events and rejects a revoked session', async () => {
+    const alice = await register('alice');
+    const bob = await register('bob');
+    const outsider = await register('outsider');
+    const chat = responseBody<ChatResponse>(
+      await request(app.getHttpServer())
+        .post('/chats')
+        .set('Authorization', `Bearer ${alice.accessToken}`)
+        .send({ recipientId: bob.user.id })
+        .expect(201),
+    );
+    await app.listen(0, '127.0.0.1');
+    const url = `${(await app.getUrl()).replace('http:', 'ws:')}/events`;
+    const clients: WebSocket[] = [];
+    const next = (
+      client: WebSocket,
+      type: string,
+    ): Promise<Record<string, unknown>> =>
+      new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          client.off('message', onMessage);
+          reject(new Error(`No ${type} event`));
+        }, 3000);
+        const onMessage = (bytes: Buffer) => {
+          const event = JSON.parse(bytes.toString('utf8')) as Record<
+            string,
+            unknown
+          >;
+
+          if (event.type === type) {
+            clearTimeout(timeout);
+            client.off('message', onMessage);
+            resolve(event);
+          }
+        };
+
+        client.on('message', onMessage);
+      });
+    const connect = async (token: string) => {
+      const client = new WebSocket(url, { origin: 'http://localhost:4200' });
+      clients.push(client);
+      await once(client, 'open');
+      const ready = next(client, 'ready');
+      client.send(JSON.stringify({ type: WebSocketEventType.Auth, token }));
+      await ready;
+
+      return client;
+    };
+
+    try {
+      const author = await connect(alice.accessToken);
+      const recipient = await connect(bob.accessToken);
+      const other = await connect(outsider.accessToken);
+      const otherEvents: string[] = [];
+      other.on('message', (data: Buffer) => {
+        otherEvents.push(data.toString('utf8'));
+      });
+      const changed = next(recipient, 'changed');
+      await request(app.getHttpServer())
+        .post(`/chats/${chat.id}/messages`)
+        .set('Authorization', `Bearer ${alice.accessToken}`)
+        .send({ text: 'Live' })
+        .expect(201);
+      expect(await changed).toMatchObject({ chatId: chat.id });
+      expect(otherEvents).toEqual([]);
+      const typing = next(author, 'typing');
+      recipient.send(
+        JSON.stringify({
+          type: WebSocketEventType.Typing,
+          chatId: chat.id,
+          typing: true,
+        }),
+      );
+      expect(await typing).toMatchObject({
+        chatId: chat.id,
+        userId: bob.user.id,
+        typing: true,
+      });
+      await request(app.getHttpServer())
+        .post('/auth/logout')
+        .set('Authorization', `Bearer ${alice.accessToken}`)
+        .expect(204);
+      const closed = once(author, 'close');
+      author.send(
+        JSON.stringify({
+          type: WebSocketEventType.Typing,
+          chatId: chat.id,
+          typing: true,
+        }),
+      );
+      expect((await closed)[0]).toBe(4001);
+    } finally {
+      for (const client of clients) {
+        client.terminate();
+      }
+    }
   });
 
   it('backfills the canonical pair without changing existing chats or messages', async () => {

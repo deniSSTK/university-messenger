@@ -2,6 +2,8 @@ type ChatParticipant = {
   id: string;
   username: string;
   displayName: string;
+  avatarUrl?: string | null;
+  avatarKey?: string | null;
 };
 
 type ChatMessage = {
@@ -11,7 +13,9 @@ type ChatMessage = {
   senderId: string;
   sender: ChatParticipant;
   createdAt: Date;
+  attachment?: { name: string; mediaType: string; size: number } | null;
   editedAt: Date | null;
+  readAt?: Date | null;
 };
 
 type PrivateChat = {
@@ -25,6 +29,7 @@ type ChatListItem = {
   recipient: ChatParticipant;
   lastMessage: ChatMessage | null;
   lastActivityAt: Date;
+  unreadCount?: number;
 };
 
 type MessageCursor = {

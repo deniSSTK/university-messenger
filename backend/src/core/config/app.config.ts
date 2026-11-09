@@ -1,3 +1,4 @@
+import { readStorageConfig } from './storage.config.js';
 import { Injectable } from '@nestjs/common';
 import {
   readDatabaseConfig,
@@ -8,9 +9,11 @@ import {
 
 @Injectable()
 class AppConfig {
+  readonly storage = readStorageConfig();
   readonly accessTokenTtl = readPositiveInteger('JWT_ACCESS_TOKEN_TTL');
   readonly sessionTtl = readPositiveInteger('JWT_SESSION_TTL');
   readonly port = readPort('PORT', 3000);
+  readonly authCookiePath = process.env.AUTH_COOKIE_PATH ?? '/auth';
   readonly database: DatabaseConfig;
   readonly jwtSecret: string;
   readonly frontendOrigin: string;
@@ -24,6 +27,10 @@ class AppConfig {
     }
 
     this.jwtSecret = secret;
+
+    if (!['/auth', '/api/auth'].includes(this.authCookiePath)) {
+      throw new Error('AUTH_COOKIE_PATH must be /auth or /api/auth');
+    }
 
     const origin = new URL(
       process.env.FRONTEND_ORIGIN ?? 'http://localhost:4200',

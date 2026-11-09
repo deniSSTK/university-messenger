@@ -3,18 +3,6 @@
   display: block;
   height: 100%;
 }
-button,
-input,
-textarea {
-  font: inherit;
-}
-button {
-  cursor: pointer;
-}
-button:disabled {
-  cursor: default;
-  opacity: 0.45;
-}
 .chat-layout {
   display: flex;
   height: 100dvh;
@@ -41,22 +29,6 @@ button:disabled {
   padding: 8px 12px;
   background: $bg-white;
 }
-.icon-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  padding: 8px;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: $text-secondary;
-}
-.icon-button:hover:not(:disabled) {
-  background: $bg-light;
-}
 .search-box {
   flex: 1;
   min-width: 0;
@@ -74,7 +46,7 @@ button:disabled {
   border-color: $primary-color;
   color: $primary-color;
 }
-.search-box > app-chat-icon {
+.search-box > app-icon-search {
   width: 20px;
   height: 20px;
 }
@@ -215,7 +187,7 @@ button:disabled {
   color: $text-secondary;
   font-size: 13px;
 }
-.next-page app-chat-icon {
+.next-page app-icon-back {
   transform: rotate(180deg);
 }
 .status {
@@ -227,14 +199,6 @@ button:disabled {
   color: $primary-color;
   vertical-align: middle;
 }
-.text-button {
-  border: 0;
-  padding: 8px 0;
-  margin-right: 16px;
-  background: transparent;
-  color: $primary-hover;
-  font-weight: 500;
-}
 .error,
 .character-count.error {
   color: #b42318;
@@ -244,7 +208,7 @@ button:disabled {
   text-align: center;
   color: $text-secondary;
 }
-.empty-list > app-chat-icon {
+.empty-list > app-icon-chat {
   width: 42px;
   height: 42px;
   margin-bottom: 16px;
@@ -508,7 +472,7 @@ button:disabled {
   background: white;
   line-height: 1.6;
 }
-.dialog-status .loader {
+.dialog-status app-spinner {
   color: $primary-color;
   margin-right: 10px;
 }
@@ -608,4 +572,8 @@ button:disabled {
   .scroll-down {
     right: 12px;
   }
+}
+
+.icon-button {
+  color: #7d8b97;
 }

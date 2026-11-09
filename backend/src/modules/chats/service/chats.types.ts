@@ -46,6 +46,21 @@ type ChatDetailsResult = {
   recipient: ChatParticipant;
 };
 
+type SendFileInput = {
+  chatId: string;
+  senderId: string;
+  name: string;
+  mediaType: string;
+  bytes: Uint8Array;
+};
+type FileResult = { name: string; mediaType: string; bytes: Uint8Array };
+type ChangeChatMessageInput = {
+  chatId: string;
+  messageId: string;
+  userId: string;
+  text: string | null;
+};
+
 export type {
   CreateChatInput,
   ChatDetailsResult,
@@ -54,4 +69,7 @@ export type {
   ListChatsInput,
   ListChatsResult,
   SendChatMessageInput,
+  SendFileInput,
+  FileResult,
+  ChangeChatMessageInput,
 };

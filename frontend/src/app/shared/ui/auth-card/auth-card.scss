@@ -1,0 +1,48 @@
+app-auth-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 20px;
+  box-sizing: border-box;
+  background: #f4f7fa;
+}
+app-auth-card > section {
+  width: 100%;
+  max-width: 420px;
+  padding: 32px;
+  background: white;
+  border-radius: 18px;
+  box-shadow: 0 8px 40px #2033470a;
+}
+app-auth-card h1 {
+  margin: 0 0 28px;
+  color: #203347;
+  font-size: 26px;
+}
+app-auth-card button[appButton] {
+  width: 100%;
+  margin-top: 8px;
+}
+app-auth-card .nav-link {
+  display: block;
+  margin-top: 24px;
+  color: #5288c1;
+  text-align: center;
+  text-decoration: none;
+}
+app-auth-card .nav-link:hover {
+  text-decoration: underline;
+}
+app-auth-card .api-error {
+  color: #bd394c;
+  margin: 14px 0;
+}
+@media (max-width: 400px) {
+  app-auth-card {
+    padding: 12px;
+  }
+  app-auth-card > section {
+    padding: 22px;
+  }
+}

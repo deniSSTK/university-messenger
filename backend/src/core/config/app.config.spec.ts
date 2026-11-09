@@ -2,6 +2,12 @@ import { AppConfig } from './app.config.js';
 
 describe('AppConfig', () => {
   const previous = {
+    S3_BUCKET: process.env.S3_BUCKET,
+    S3_REGION: process.env.S3_REGION,
+    S3_ENDPOINT: process.env.S3_ENDPOINT,
+    S3_FORCE_PATH_STYLE: process.env.S3_FORCE_PATH_STYLE,
+    S3_SIGNED_URL_TTL_SECONDS: process.env.S3_SIGNED_URL_TTL_SECONDS,
+    AUTH_COOKIE_PATH: process.env.AUTH_COOKIE_PATH,
     JWT_ACCESS_TOKEN_TTL: process.env.JWT_ACCESS_TOKEN_TTL,
     JWT_SESSION_TTL: process.env.JWT_SESSION_TTL,
     JWT_SECRET: process.env.JWT_SECRET,
@@ -16,6 +22,12 @@ describe('AppConfig', () => {
   };
 
   beforeEach(() => {
+    process.env.S3_BUCKET = 'messenger-test';
+    delete process.env.S3_REGION;
+    delete process.env.S3_ENDPOINT;
+    delete process.env.S3_FORCE_PATH_STYLE;
+    delete process.env.S3_SIGNED_URL_TTL_SECONDS;
+    delete process.env.AUTH_COOKIE_PATH;
     process.env.JWT_ACCESS_TOKEN_TTL = '900';
     process.env.JWT_SESSION_TTL = '604800000';
     process.env.JWT_SECRET = 'test-only-secret-at-least-32-bytes-long';
@@ -139,5 +151,14 @@ describe('AppConfig', () => {
   ])('rejects invalid frontend origins %s', (origin) => {
     process.env.FRONTEND_ORIGIN = origin;
     expect(() => new AppConfig()).toThrow('FRONTEND_ORIGIN');
+  });
+  it('supports refresh cookies behind the production API prefix', () => {
+    process.env.AUTH_COOKIE_PATH = '/api/auth';
+    expect(new AppConfig().authCookiePath).toBe('/api/auth');
+  });
+
+  it('rejects unsupported cookie paths', () => {
+    process.env.AUTH_COOKIE_PATH = '/';
+    expect(() => new AppConfig()).toThrow('AUTH_COOKIE_PATH');
   });
 });

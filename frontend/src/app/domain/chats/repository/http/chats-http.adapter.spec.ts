@@ -16,8 +16,14 @@ const owner = {
   id: '15a1a753-e61c-4c4a-9141-9ea2d69c6f81',
   username: 'alice',
   displayName: 'Alice',
+  avatarUrl: null,
 };
-const peer = { id: '114d92c3-4a55-4090-9606-7888b4c28aab', username: 'bob', displayName: 'Bob' };
+const peer = {
+  id: '114d92c3-4a55-4090-9606-7888b4c28aab',
+  username: 'bob',
+  displayName: 'Bob',
+  avatarUrl: null,
+};
 const date = '2026-11-05T12:00:00.000Z';
 const message = {
   id: 'ed5d5347-4ab5-44e2-bad7-f994af299f00',
@@ -29,7 +35,13 @@ const message = {
   editedAt: null,
 };
 const details = { id: chatId, createdAt: date, recipient: peer };
-const mappedMessage = { id: message.id, senderId: owner.id, text: message.text, createdAt: date };
+const mappedMessage = {
+  id: message.id,
+  senderId: owner.id,
+  text: message.text,
+  createdAt: date,
+  editedAt: null,
+};
 const mappedChat = { id: chatId, person: peer, lastMessage: null, activityAt: date };
 const emptyPage = { items: [], meta: { page: 1, limit: 20, total: 0, totalPages: 0 } };
 

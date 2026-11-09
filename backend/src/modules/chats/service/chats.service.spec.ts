@@ -1,3 +1,5 @@
+import { WebSocketEventType } from '@university-messenger/events';
+import type { ObjectStorage } from '../../media/domain/object-storage.port.js';
 import {
   CannotCreateChatWithSelfError,
   ChatNotFoundError,
@@ -24,6 +26,9 @@ describe('ChatsService', () => {
       isActiveMember: jest.fn(),
     };
     messagesRepository = {
+      findAttachment: jest.fn(),
+      changeMessage: jest.fn(),
+      markRead: jest.fn(),
       sendMessage: jest.fn(),
       findMessages: jest.fn(),
     };
@@ -190,5 +195,108 @@ describe('ChatsService', () => {
       }),
     ).rejects.toBeInstanceOf(InvalidMessageCursorError);
     expect(messagesRepository.findMessages.mock.calls).toHaveLength(0);
+  });
+  it('blocks editing or deleting outside a membership before reaching message storage', async () => {
+    chatsRepository.isActiveMember.mockResolvedValue(false);
+    await expect(
+      service.changeMessage({
+        chatId: 'chat',
+        messageId: 'message',
+        userId: 'outsider',
+        text: null,
+      }),
+    ).rejects.toBeInstanceOf(ChatNotFoundError);
+    expect(messagesRepository.changeMessage.mock.calls).toHaveLength(0);
+  });
+
+  it('does not reveal another author’s message through editing or deletion', async () => {
+    chatsRepository.isActiveMember.mockResolvedValue(true);
+    messagesRepository.changeMessage.mockResolvedValue(null);
+    await expect(
+      service.changeMessage({
+        chatId: 'chat',
+        messageId: 'message',
+        userId: 'recipient',
+        text: 'edit',
+      }),
+    ).rejects.toBeInstanceOf(ChatNotFoundError);
+  });
+
+  it('only publishes a read update when stored read state changes', async () => {
+    const publish = jest.fn();
+    service = new ChatsService(chatsRepository, messagesRepository, {
+      publish,
+    });
+    chatsRepository.isActiveMember.mockResolvedValue(true);
+    messagesRepository.markRead
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    await service.markRead('chat', 'recipient', 'boundary');
+    await service.markRead('chat', 'recipient', 'boundary');
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish).toHaveBeenCalledWith({
+      type: WebSocketEventType.Changed,
+      chatId: 'chat',
+    });
+  });
+
+  it('rejects oversized files and filenames containing paths', async () => {
+    await expect(
+      service.sendFile({
+        chatId: 'chat',
+        senderId: 'me',
+        name: '../file.txt',
+        mediaType: 'text/plain',
+        bytes: new Uint8Array([1]),
+      }),
+    ).rejects.toBeInstanceOf(InvalidMessageTextError);
+    await expect(
+      service.sendFile({
+        chatId: 'chat',
+        senderId: 'me',
+        name: 'file.txt',
+        mediaType: 'text/plain',
+        bytes: new Uint8Array(5242881),
+      }),
+    ).rejects.toBeInstanceOf(InvalidMessageTextError);
+    expect(messagesRepository.sendMessage.mock.calls).toHaveLength(0);
+  });
+
+  it('checks membership before downloading a file', async () => {
+    chatsRepository.isActiveMember.mockResolvedValue(false);
+    await expect(
+      service.getFile('chat', 'message', 'outsider'),
+    ).rejects.toBeInstanceOf(ChatNotFoundError);
+    expect(messagesRepository.findAttachment.mock.calls).toHaveLength(0);
+  });
+  it('removes an uploaded S3 object when saving message metadata fails', async () => {
+    const storage: jest.Mocked<ObjectStorage> = {
+      put: jest.fn().mockResolvedValue(undefined),
+      get: jest.fn(),
+      remove: jest.fn().mockResolvedValue(undefined),
+      url: jest.fn(),
+    };
+    chatsRepository.isActiveMember.mockResolvedValue(true);
+    messagesRepository.sendMessage.mockRejectedValue(
+      new Error('Database unavailable'),
+    );
+    const withStorage = new ChatsService(
+      chatsRepository,
+      messagesRepository,
+      { publish: jest.fn() },
+      storage,
+    );
+    await expect(
+      withStorage.sendFile({
+        chatId: 'chat',
+        senderId: 'me',
+        name: 'notes.txt',
+        mediaType: 'text/plain',
+        bytes: new Uint8Array([1]),
+      }),
+    ).rejects.toThrow('Database unavailable');
+    expect(storage.remove.mock.calls[0][0]).toBe(
+      storage.put.mock.calls[0][0].key,
+    );
   });
 });

@@ -2,6 +2,7 @@ interface ChatPersonHttpResponse {
   id: string;
   username: string;
   displayName: string;
+  avatarUrl?: string | null;
 }
 interface ChatMessageHttpResponse {
   id: string;
@@ -11,6 +12,8 @@ interface ChatMessageHttpResponse {
   text: string;
   createdAt: string;
   editedAt: string | null;
+  readAt?: string | null;
+  attachment?: { name: string; mediaType: string; size: number } | null;
 }
 interface ChatDetailsHttpResponse {
   id: string;
@@ -23,6 +26,7 @@ interface ChatListHttpResponse {
     recipient: ChatPersonHttpResponse;
     lastMessage: ChatMessageHttpResponse | null;
     lastActivityAt: string;
+    unreadCount?: number;
   }[];
   meta: { page: number; limit: number; total: number; totalPages: number };
 }
@@ -36,6 +40,7 @@ interface CreateChatHttpRequest {
 interface SendMessageHttpRequest {
   text: string;
 }
+
 export type {
   ChatPersonHttpResponse,
   ChatMessageHttpResponse,

@@ -1,9 +1,13 @@
+import { AppConfig } from './core/config/app.config.js';
 import type { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { REFRESH_COOKIE } from './modules/auth/delivery/http/auth.constants.js';
 
 function configureSwagger(app: INestApplication) {
+  const apiPath =
+    app.get(AppConfig).authCookiePath.replace(/\/auth$/, '') || '/';
   const config = new DocumentBuilder()
+    .addServer(apiPath)
     .setTitle('University Messenger API')
     .setDescription(
       'Register or log in to receive an access token and an HttpOnly refresh cookie. ' +

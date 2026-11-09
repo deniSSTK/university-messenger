@@ -25,9 +25,19 @@
     "prisma:generate": "prisma format && prisma generate",
     "migrate:new": "npm run prisma:generate && npm run db:up && prisma migrate dev --create-only",
     "migrate:apply": "prisma migrate deploy",
-    "db:up": "docker compose up -d db"
+    "db:up": "docker compose up -d db",
+    "media:migrate": "node dist/modules/media/cli/migrate-media.js",
+    "build:pkg": "npm --prefix ../pkg/events run build",
+    "prepare": "npm run build:pkg",
+    "prebuild": "npm run build:pkg",
+    "pretest": "npm run build:pkg",
+    "prestart": "npm run build:pkg",
+    "pretest:e2e": "npm run build:pkg",
+    "prestart:dev": "npm run build:pkg"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1164.0",
+    "@aws-sdk/s3-request-presigner": "^3.1164.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
     "@nestjs/jwt": "^11.0.2",
@@ -44,7 +54,9 @@
     "dotenv": "^17.4.2",
     "pg": "^8.23.1",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "ws": "^8.22.2",
+    "@university-messenger/events": "file:../pkg/events"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -59,6 +71,7 @@
     "@types/node": "^24.0.0",
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.0.0",
+    "@types/ws": "^8.18.2",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",

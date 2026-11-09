@@ -16,6 +16,14 @@ class PublicUserDto {
   displayName!: string;
 
   @ApiProperty({
+    type: String,
+    nullable: true,
+    example: null,
+    description: 'Temporary signed S3 GET URL for the avatar.',
+  })
+  avatarUrl?: string | null;
+
+  @ApiProperty({
     example: AUTH_EXAMPLES.createdAt,
     type: String,
     format: 'date-time',

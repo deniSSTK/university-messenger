@@ -1,3 +1,5 @@
+import { ACTIVITY_REPOSITORY } from '../repository/activity.repository';
+import type { ChatActivity, ChatFile } from './chats.types';
 import { Injectable, inject } from '@angular/core';
 import { countCodePoints } from '../../../core/text/unicode';
 import { MESSAGE_TEXT_MAX_LENGTH } from '../chats.constants';
@@ -14,7 +16,12 @@ class ChatError extends Error {
   }
 }
 function mapPerson(person: ChatPersonRecord): ChatPerson {
-  return { id: person.id, username: person.username, displayName: person.displayName };
+  return {
+    id: person.id,
+    username: person.username,
+    displayName: person.displayName,
+    avatarUrl: person.avatarUrl ?? null,
+  };
 }
 function mapMessage(message: ChatMessageRecord): ChatMessage {
   return {
@@ -22,6 +29,19 @@ function mapMessage(message: ChatMessageRecord): ChatMessage {
     senderId: message.senderId,
     text: message.text,
     createdAt: message.createdAt,
+    ...(message.editedAt !== undefined ? { editedAt: message.editedAt } : {}),
+    ...(message.readAt !== undefined ? { readAt: message.readAt } : {}),
+    ...(message.attachment !== undefined
+      ? {
+          attachment: message.attachment
+            ? {
+                name: message.attachment.name,
+                mediaType: message.attachment.mediaType,
+                size: message.attachment.size,
+              }
+            : null,
+        }
+      : {}),
   };
 }
 function mapChat(chat: ChatRecord): Conversation {
@@ -30,11 +50,105 @@ function mapChat(chat: ChatRecord): Conversation {
     person: mapPerson(chat.person),
     lastMessage: chat.lastMessage ? mapMessage(chat.lastMessage) : null,
     activityAt: chat.activityAt,
+    ...(chat.unreadCount !== undefined ? { unreadCount: chat.unreadCount } : {}),
   };
 }
 @Injectable({ providedIn: 'root' })
 class ChatService {
   private repository = inject(CHATS_REPOSITORY);
+  private activity = inject(ACTIVITY_REPOSITORY, { optional: true });
+
+  upload(chatId: string, file: ChatFile): Promise<void> {
+    if (file.bytes.length < 1 || file.bytes.length > 5242880) {
+      return Promise.reject(new ChatError('validation'));
+    }
+    return this.run(async () => {
+      if (!this.activity) {
+        throw new ChatError('unavailable');
+      }
+      await this.activity.upload(chatId, {
+        name: file.name,
+        mediaType: file.mediaType,
+        bytes: file.bytes,
+      });
+    });
+  }
+
+  download(chatId: string, messageId: string): Promise<ChatFile> {
+    return this.run(async () => {
+      if (!this.activity) {
+        throw new ChatError('unavailable');
+      }
+      const file = await this.activity.download(chatId, messageId);
+      return { name: file.name, mediaType: file.mediaType, bytes: file.bytes };
+    });
+  }
+
+  watch(listener: (event: ChatActivity) => void): () => void {
+    return (
+      this.activity?.watch((event) =>
+        listener({
+          type: event.type,
+          chatId: event.chatId,
+          userId: event.userId,
+          typing: event.typing,
+        }),
+      ) ?? (() => {})
+    );
+  }
+
+  typing(chatId: string, typing: boolean): void {
+    this.activity?.typing(chatId, typing);
+  }
+
+  edit(chatId: string, messageId: string, text: string): Promise<void> {
+    if (!text.trim() || countCodePoints(text) > MESSAGE_TEXT_MAX_LENGTH) {
+      return Promise.reject(new ChatError('validation'));
+    }
+    return this.run(async () => {
+      if (!this.activity) {
+        throw new ChatError('unavailable');
+      }
+      await this.activity.edit(chatId, messageId, text);
+    });
+  }
+
+  remove(chatId: string, messageId: string): Promise<void> {
+    return this.run(async () => {
+      if (!this.activity) {
+        throw new ChatError('unavailable');
+      }
+      await this.activity.remove(chatId, messageId);
+    });
+  }
+
+  read(chatId: string, messageId: string): Promise<void> {
+    return this.run(async () => {
+      await this.activity?.read(chatId, messageId);
+    });
+  }
+
+  async syncHistory(chatId: string, oldestCreatedAt: string | null): Promise<HistoryPage> {
+    let page = await this.history(chatId);
+    const messages = [...page.messages];
+    const visited = new Set<string>();
+    while (
+      oldestCreatedAt &&
+      page.nextBefore &&
+      (!page.messages.length || page.messages[0].createdAt >= oldestCreatedAt)
+    ) {
+      if (visited.has(page.nextBefore)) {
+        throw new ChatError('unavailable');
+      }
+      visited.add(page.nextBefore);
+      page = await this.history(chatId, page.nextBefore);
+      messages.unshift(...page.messages);
+    }
+    return {
+      messages: [...new Map(messages.map((message) => [message.id, message])).values()],
+      nextBefore: page.nextBefore,
+    };
+  }
 
   viewer(): Promise<ChatPerson> {
     return this.run(async () => mapPerson(await this.repository.viewer()));
@@ -102,4 +216,5 @@ class ChatService {
     }
   }
 }
+
 export { ChatService, ChatError };

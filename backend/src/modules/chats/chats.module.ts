@@ -1,3 +1,11 @@
+import { MediaModule } from '../media/media.module.js';
+import {
+  OBJECT_STORAGE,
+  type ObjectStorage,
+} from '../media/domain/object-storage.port.js';
+import { AppConfigModule } from '../../core/config/config.module.js';
+import { ChatEvents } from './service/chat-events.js';
+import { ChatSocketServer } from './delivery/ws/chat-socket.server.js';
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
 import { PrismaModule } from '../../prisma/prisma.module.js';
@@ -13,17 +21,28 @@ import { ChatsController } from './delivery/http/chats.controller.js';
 import { ChatMemberGuard } from './delivery/http/guards/chat-member.guard.js';
 
 @Module({
-  imports: [AuthModule, PrismaModule],
+  imports: [AuthModule, PrismaModule, AppConfigModule, MediaModule],
   controllers: [ChatsController],
   providers: [
     PrismaChatsRepository,
+    ChatEvents,
+    ChatSocketServer,
     { provide: CHATS_REPOSITORY, useExisting: PrismaChatsRepository },
     { provide: MESSAGES_REPOSITORY, useExisting: PrismaChatsRepository },
     {
       provide: ChatsService,
-      inject: [CHATS_REPOSITORY, MESSAGES_REPOSITORY],
-      useFactory: (chats: IChatsRepository, messages: IMessagesRepository) =>
-        new ChatsService(chats, messages),
+      inject: [
+        CHATS_REPOSITORY,
+        MESSAGES_REPOSITORY,
+        ChatEvents,
+        OBJECT_STORAGE,
+      ],
+      useFactory: (
+        chats: IChatsRepository,
+        messages: IMessagesRepository,
+        events: ChatEvents,
+        storage: ObjectStorage,
+      ) => new ChatsService(chats, messages, events, storage),
     },
     ChatMemberGuard,
   ],

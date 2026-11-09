@@ -3,6 +3,8 @@ type PublicUser = {
   email: string;
   username: string;
   displayName: string;
+  avatarUrl?: string | null;
+  avatarKey?: string | null;
   createdAt: Date;
   updatedAt: Date;
 };

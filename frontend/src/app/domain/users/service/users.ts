@@ -1,3 +1,4 @@
+import { countCodePoints } from '../../../core/text/unicode';
 import { Injectable, inject } from '@angular/core';
 import { map, of, throwError } from 'rxjs';
 import { USERS_REPOSITORY } from '../repository/users.repository';
@@ -16,10 +17,23 @@ interface SearchUsersResult {
   totalPages: number;
 }
 class UserSearchValidationError extends Error {}
+class UserProfileValidationError extends Error {}
+interface UpdateProfileInput {
+  displayName: string;
+  avatarUrl?: string | null;
+}
 
 @Injectable({ providedIn: 'root' })
 class Users {
   private repository = inject(USERS_REPOSITORY);
+
+  updateProfile(input: UpdateProfileInput) {
+    const displayName = input.displayName.trim();
+    if (!displayName || countCodePoints(displayName) > 64) {
+      return throwError(() => new UserProfileValidationError());
+    }
+    return this.repository.updateProfile({ displayName, avatarUrl: input.avatarUrl });
+  }
 
   search(input: SearchUsersInput) {
     const query = input.search.trim().replace(/^@/, '').toLowerCase();
@@ -45,5 +59,5 @@ class Users {
     );
   }
 }
-export { Users, UserSearchValidationError };
-export type { SearchUsersInput, SearchUsersResult, SearchUserResult };
+export { Users, UserSearchValidationError, UserProfileValidationError };
+export type { SearchUsersInput, SearchUsersResult, SearchUserResult, UpdateProfileInput };

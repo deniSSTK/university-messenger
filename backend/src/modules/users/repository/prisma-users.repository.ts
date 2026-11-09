@@ -1,3 +1,7 @@
+import type {
+  ProfileUpdateResult,
+  ProfileUpdate,
+} from '../domain/profile.models.js';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../prisma/prisma.service.js';
@@ -14,6 +18,42 @@ function escapeLikePrefix(value: string): string {
 @Injectable()
 class PrismaUsersRepository implements UsersRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  async updateProfile(input: ProfileUpdate): Promise<ProfileUpdateResult> {
+    return this.prisma.$transaction(async (transaction) => {
+      const [previous] = await transaction.$queryRaw<
+        { avatarKey: string | null }[]
+      >`
+        SELECT "avatarKey" FROM "User" WHERE "id" = ${input.userId}::uuid AND "deletedAt" IS NULL FOR UPDATE
+      `;
+      const user = await transaction.user.update({
+        where: { id: input.userId, deletedAt: null },
+        data: {
+          displayName: input.displayName,
+          avatarUrl: input.avatarUrl,
+          avatarKey: input.avatarKey,
+        },
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          avatarUrl: true,
+          avatarKey: true,
+        },
+      });
+
+      return {
+        previousAvatarKey: previous?.avatarKey ?? null,
+        profile: {
+          id: user.id,
+          username: user.username,
+          displayName: user.displayName,
+          avatarUrl: user.avatarUrl,
+          avatarKey: user.avatarKey,
+        },
+      };
+    });
+  }
 
   async findByUsernamePrefix(input: FindUsersInput): Promise<FindUsersResult> {
     const prefix = `${escapeLikePrefix(input.usernamePrefix.toLowerCase())}%`;

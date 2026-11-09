@@ -1,3 +1,5 @@
+import type { ObjectStorage } from '../../media/domain/object-storage.port.js';
+import { avatarUrl } from '../../../common/utils/avatar-url.js';
 import { createHash, randomBytes } from 'node:crypto';
 import type {
   AuthRepository,
@@ -26,6 +28,7 @@ class AuthService {
     private readonly passwords: PasswordHasher,
     private readonly tokensIssuer: AccessTokenIssuer,
     private readonly config: AuthSettings,
+    private readonly storage?: ObjectStorage,
   ) {}
 
   async register(input: RegisterInput): Promise<AuthResult> {
@@ -116,7 +119,10 @@ class AuthService {
       throw new InvalidSessionError();
     }
 
-    return { user: session.user, sessionId: session.id };
+    return {
+      user: await this.presentUser(session.user),
+      sessionId: session.id,
+    };
   }
 
   private async createSession(
@@ -133,6 +139,20 @@ class AuthService {
     return this.tokens(user, session.id, refreshToken, session.expiresAt);
   }
 
+  private async presentUser(user: PublicUser): Promise<PublicUser> {
+    const url = await avatarUrl(user, this.storage);
+
+    return {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      displayName: user.displayName,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      ...(url !== undefined ? { avatarUrl: url } : {}),
+    };
+  }
+
   private async tokens(
     user: PublicUser,
     sessionId: string,
@@ -142,7 +162,7 @@ class AuthService {
     const accessToken = await this.tokensIssuer.issue(user.id, sessionId);
 
     return {
-      user,
+      user: await this.presentUser(user),
       accessToken,
       tokenType: 'Bearer',
       expiresIn: this.config.accessTokenTtl,

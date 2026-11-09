@@ -25,6 +25,7 @@ type SendMessageInput = {
   chatId: string;
   senderId: string;
   text: string;
+  file?: { name: string; mediaType: string; size: number; key: string };
 };
 
 type FindMessagesInput = {
@@ -47,7 +48,30 @@ interface IChatsRepository {
   isActiveMember(chatId: string, userId: string): Promise<boolean>;
 }
 
+type ChangeMessageInput = {
+  chatId: string;
+  messageId: string;
+  userId: string;
+  text: string | null;
+};
+
+type AttachmentData = {
+  name: string;
+  mediaType: string;
+  key: string | null;
+  legacyBytes: Uint8Array | null;
+};
 interface IMessagesRepository {
+  findAttachment(
+    chatId: string,
+    messageId: string,
+  ): Promise<AttachmentData | null>;
+  changeMessage(input: ChangeMessageInput): Promise<ChatMessage | null>;
+  markRead(
+    chatId: string,
+    userId: string,
+    throughMessageId: string,
+  ): Promise<boolean>;
   sendMessage(input: SendMessageInput): Promise<ChatMessage>;
   findMessages(input: FindMessagesInput): Promise<FindMessagesResult>;
 }
@@ -57,6 +81,8 @@ const MESSAGES_REPOSITORY = Symbol('MESSAGES_REPOSITORY');
 
 export { CHATS_REPOSITORY, MESSAGES_REPOSITORY };
 export type {
+  AttachmentData,
+  ChangeMessageInput,
   CreatePrivateChatInput,
   FindChatsInput,
   FindChatsResult,

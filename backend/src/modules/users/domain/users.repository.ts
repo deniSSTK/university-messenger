@@ -1,3 +1,4 @@
+import type { ProfileUpdateResult, ProfileUpdate } from './profile.models.js';
 import type { UserSearchItem } from './users.models.js';
 
 type FindUsersInput = {
@@ -13,6 +14,7 @@ type FindUsersResult = {
 };
 
 interface UsersRepository {
+  updateProfile(input: ProfileUpdate): Promise<ProfileUpdateResult>;
   findByUsernamePrefix(input: FindUsersInput): Promise<FindUsersResult>;
 }
 

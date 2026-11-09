@@ -19,4 +19,22 @@ type SearchUsersResult = {
   totalPages: number;
 };
 
-export type { SearchUsersInput, SearchUserResult, SearchUsersResult };
+type UpdateProfileInput = {
+  userId: string;
+  displayName: string;
+  avatarUrl?: string | null;
+};
+type ProfileResult = {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+};
+
+export type {
+  SearchUsersInput,
+  SearchUserResult,
+  SearchUsersResult,
+  UpdateProfileInput,
+  ProfileResult,
+};

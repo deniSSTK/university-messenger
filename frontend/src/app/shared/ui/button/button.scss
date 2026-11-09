@@ -1,0 +1,79 @@
+:host {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 10px 16px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    opacity 0.15s;
+  background: #5288c1;
+  color: white;
+  text-decoration: none;
+}
+:host:hover:not(:disabled) {
+  background: #4178b2;
+}
+:host:focus-visible {
+  outline: 3px solid #9ac2ed;
+  outline-offset: 2px;
+}
+:host:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+:host(:where([data-variant='secondary'])) {
+  background: #edf3f8;
+  color: #315779;
+  border-color: #dbe6ee;
+}
+:host(:where([data-variant='secondary'])):hover:not(:disabled) {
+  background: #dfeaf3;
+}
+:host(:where([data-variant='ghost'])),
+:host(:where([data-variant='icon'])),
+:host(:where([data-variant='bare'])) {
+  background: transparent;
+  color: inherit;
+}
+:host(:where([data-variant='ghost'])):hover:not(:disabled),
+:host(:where([data-variant='icon'])):hover:not(:disabled) {
+  background: #172b3c0b;
+}
+:host(:where([data-variant='icon'])) {
+  width: 40px;
+  height: 40px;
+  min-height: 0;
+  padding: 9px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+:host(:where([data-variant='bare'])) {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  font-weight: inherit;
+  text-align: inherit;
+  justify-content: inherit;
+}
+:host(:where([data-variant='danger'])) {
+  background: #fff0f1;
+  color: #b73a44;
+}
+:host(:where([data-variant='danger'])):hover:not(:disabled) {
+  background: #ffe1e4;
+}
+@media (prefers-reduced-motion: reduce) {
+  :host {
+    transition: none;
+  }
+}

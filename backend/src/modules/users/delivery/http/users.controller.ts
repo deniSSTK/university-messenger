@@ -1,3 +1,7 @@
+import { ApiServiceUnavailableResponse } from '@nestjs/swagger';
+import { Body, Patch, BadRequestException } from '@nestjs/common';
+import { InvalidProfileError } from '../../domain/profile.models.js';
+import { UpdateProfileDto, ProfileResponseDto } from './dto/profile.dto.js';
 import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -13,12 +17,46 @@ import { UsersService } from '../../service/users.service.js';
 import { SearchUsersRequestDto } from './dto/search-users-request.dto.js';
 import { SearchUsersResponseDto } from './dto/search-users-response.dto.js';
 
+@ApiServiceUnavailableResponse({
+  description: 'Object storage is temporarily unavailable.',
+})
 @ApiTags('Users')
 @ApiBearerAuth()
 @Controller('users')
 @UseGuards(AccessTokenGuard)
 class UsersController {
   constructor(private readonly users: UsersService) {}
+
+  @Patch('me')
+  @ApiOperation({ summary: 'Update your display name and avatar' })
+  @ApiOkResponse({ type: ProfileResponseDto })
+  @ApiBadRequestResponse({ description: 'Invalid name or avatar.' })
+  @ApiUnauthorizedResponse({ description: 'Inactive session.' })
+  async updateProfile(
+    @Body() dto: UpdateProfileDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<ProfileResponseDto> {
+    try {
+      const result = await this.users.updateProfile({
+        userId: request.auth.user.id,
+        displayName: dto.displayName,
+        avatarUrl: dto.avatarUrl,
+      });
+
+      return {
+        id: result.id,
+        username: result.username,
+        displayName: result.displayName,
+        avatarUrl: result.avatarUrl,
+      };
+    } catch (error: unknown) {
+      if (error instanceof InvalidProfileError) {
+        throw new BadRequestException(error.message);
+      }
+
+      throw error;
+    }
+  }
 
   @Get()
   @ApiOperation({

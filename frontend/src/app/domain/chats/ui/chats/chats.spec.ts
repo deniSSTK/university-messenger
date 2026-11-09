@@ -1,3 +1,4 @@
+import { WebSocketEventType } from '@university-messenger/events';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { BehaviorSubject, Subject, of, throwError } from 'rxjs';
@@ -5,6 +6,7 @@ import type { Observable } from 'rxjs';
 import { Chats } from './chats';
 import { ChatService, ChatError } from '../../service/chats';
 import type {
+  ChatActivity,
   Conversation,
   ChatMessage,
   HistoryPage,
@@ -41,6 +43,12 @@ describe('chat screen', () => {
   let component: Chats;
   let params: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
   const api = {
+    watch: vi.fn<(listener: (event: ChatActivity) => void) => () => void>(),
+    typing: vi.fn(),
+    read: vi.fn(),
+    edit: vi.fn(),
+    remove: vi.fn(),
+    syncHistory: vi.fn(),
     viewer: vi.fn<() => Promise<ChatPerson>>(),
     list: vi.fn<(page: number) => Promise<ChatPage>>(),
     get: vi.fn<(id: string) => Promise<Conversation>>(),
@@ -50,12 +58,17 @@ describe('chat screen', () => {
     send: vi.fn<(id: string, text: string) => Promise<ChatMessage>>(),
   };
   const search = vi.fn<(input: SearchUsersInput) => Observable<SearchUsersResult>>();
+  const updateProfile = vi.fn();
   const navigate = vi.fn().mockResolvedValue(true);
 
   beforeEach(async () => {
     for (const method of Object.values(api)) {
       method.mockReset();
     }
+    api.watch.mockReturnValue(() => {});
+    api.read.mockResolvedValue(undefined);
+    api.syncHistory.mockResolvedValue({ messages: [], nextBefore: null });
+    updateProfile.mockReset().mockReturnValue(of(undefined));
     search.mockReset().mockReturnValue(of({ users: [], page: 1, totalPages: 0 }));
     navigate.mockClear();
     api.viewer.mockResolvedValue(viewer);
@@ -70,7 +83,7 @@ describe('chat screen', () => {
       imports: [Chats],
       providers: [
         { provide: ChatService, useValue: api },
-        { provide: Users, useValue: { search } },
+        { provide: Users, useValue: { search, updateProfile } },
         { provide: ActivatedRoute, useValue: { paramMap: params } },
         { provide: Router, useValue: { navigate } },
         { provide: Auth, useValue: { logout: vi.fn().mockResolvedValue(undefined) } },
@@ -81,7 +94,10 @@ describe('chat screen', () => {
     fixture.detectChanges();
     await settle();
   });
-  afterEach(() => fixture.destroy());
+  afterEach(() => {
+    fixture.destroy();
+    vi.useRealTimers();
+  });
   async function select(id = 'a') {
     params.next(convertToParamMap({ chatId: id }));
     await settle();
@@ -427,5 +443,134 @@ describe('chat screen', () => {
     await select('demo-old-chat');
     expect(component.chatError()).toContain('недоступний');
     expect(component.active()).toBeNull();
+  });
+  it('edits an own message, preserves failed edit text and removes a message after server confirmation', async () => {
+    api.history.mockResolvedValue({ messages: [message()], nextBefore: null });
+    await select();
+    component.beginEdit(component.messages()[0]);
+    component.editText.set('Updated');
+    api.edit.mockRejectedValueOnce(new Error('offline'));
+    await component.saveEdit();
+    expect(component.editingId()).toBe('m1');
+    expect(component.editText()).toBe('Updated');
+    expect(component.actionError()).toBeTruthy();
+    api.edit.mockResolvedValue(undefined);
+    await component.saveEdit();
+    expect(api.edit).toHaveBeenLastCalledWith('a', 'm1', 'Updated');
+    expect(component.editingId()).toBeNull();
+    api.remove.mockResolvedValue(undefined);
+    await component.deleteMessage(component.messages()[0]);
+    expect(component.messages()).toEqual([]);
+  });
+
+  it('keeps a profile form open after a failed save and reloads the saved profile on success', async () => {
+    await component.openProfile();
+    component.profileName.set('New name');
+    updateProfile.mockReturnValueOnce(throwError(() => new Error('offline')));
+    await component.saveProfile();
+    expect(component.profileOpen()).toBe(true);
+    expect(component.profileName()).toBe('New name');
+    updateProfile.mockReturnValue(of(undefined));
+    api.viewer.mockResolvedValue({ ...viewer, displayName: 'New name' });
+    await component.saveProfile();
+    expect(updateProfile).toHaveBeenLastCalledWith({ displayName: 'New name' });
+    expect(component.viewer()?.displayName).toBe('New name');
+    expect(component.profileOpen()).toBe(false);
+  });
+  it('reconciles live edits and deletions while preserving a send saved during synchronization', async () => {
+    const old = message('old', 'before');
+    api.history.mockResolvedValue({ messages: [message('deleted'), old], nextBefore: null });
+    await select();
+    const pending = deferred<HistoryPage>();
+    api.syncHistory.mockReturnValueOnce(pending.promise);
+    const notify = api.watch.mock.calls[0][0];
+    notify({ type: WebSocketEventType.Changed, chatId: 'a' });
+    await vi.waitFor(() => expect(api.syncHistory).toHaveBeenCalled());
+    const sent = message('sent', 'saved during sync', '2026-11-04T00:00:00Z');
+    api.send.mockResolvedValueOnce(sent);
+    component.draftChanged(sent.text);
+    await component.send();
+    pending.resolve({
+      messages: [
+        { ...old, text: 'after', editedAt: '2026-11-04T00:00:00Z', readAt: '2026-11-04T00:00:00Z' },
+      ],
+      nextBefore: null,
+    });
+    await settle();
+    expect(component.messages().map((item) => item.id)).toEqual(['old', 'sent']);
+    expect(component.messages()[0]).toMatchObject({
+      text: 'after',
+      editedAt: '2026-11-04T00:00:00Z',
+      readAt: '2026-11-04T00:00:00Z',
+    });
+  });
+  it('has no manual reload actions in the chat list, conversation header or menu', async () => {
+    await select();
+    component.chatMenuOpen.set(true);
+    fixture.detectChanges();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[aria-label="Оновити список чатів"]')).toBeNull();
+    expect(root.querySelector('[aria-label="Оновити повідомлення"]')).toBeNull();
+    expect(root.querySelector('app-icon-refresh')).toBeNull();
+    expect(root.querySelector('.dialog-menu')?.textContent).not.toContain('Оновити');
+  });
+
+  it('automatically reconciles missed messages and unread counts after reconnecting', async () => {
+    api.history.mockResolvedValueOnce({ messages: [message('old')], nextBefore: null });
+    await select();
+    const notify = api.watch.mock.calls[0][0];
+    notify({ type: WebSocketEventType.Offline });
+    expect(component.connection()).toBe('offline');
+    api.list.mockResolvedValue({
+      chats: [{ ...chat('b'), unreadCount: 3 }, chat('a')],
+      hasMore: false,
+    });
+    api.syncHistory.mockResolvedValue({
+      messages: [message('new', 'received while offline')],
+      nextBefore: null,
+    });
+    notify({ type: WebSocketEventType.Ready });
+    await vi.waitFor(() => expect(component.messages().map((item) => item.id)).toEqual(['new']));
+    expect(component.chats().map((item) => item.id)).toEqual(['b', 'a']);
+    expect(component.chats()[0].unreadCount).toBe(3);
+    expect(component.connection()).toBe('ready');
+  });
+
+  it('keeps all loaded chat pages when a WebSocket event changes their ordering', async () => {
+    api.list.mockResolvedValueOnce({ chats: [chat('a')], hasMore: true });
+    await component.loadChats();
+    api.list.mockResolvedValueOnce({ chats: [chat('b')], hasMore: true });
+    await component.loadChats(true);
+    api.list.mockImplementation(async (page) => ({
+      chats: [chat(page === 1 ? 'b' : 'a')],
+      hasMore: true,
+    }));
+    api.watch.mock.calls[0][0]({ type: WebSocketEventType.Changed, chatId: 'b' });
+    await vi.waitFor(() => expect(component.chats().map((item) => item.id)).toEqual(['b', 'a']));
+    expect(component.hasMoreChats()).toBe(true);
+    expect(component.listLoading()).toBe(false);
+  });
+
+  it('automatically retries a failed synchronization without another event or a reload click', async () => {
+    vi.useFakeTimers();
+    const count = api.list.mock.calls.length;
+    api.list.mockRejectedValueOnce(new Error('temporary network error'));
+    api.watch.mock.calls[0][0]({ type: WebSocketEventType.Ready });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(component.listError()).toContain('автоматично');
+    expect(component.connection()).toBe('offline');
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(api.list.mock.calls.length).toBe(count + 2);
+    expect(component.listError()).toBe('');
+    expect(component.connection()).toBe('ready');
+  });
+
+  it('automatically recovers a conversation that failed to open when the connection returns', async () => {
+    api.get.mockRejectedValueOnce(new Error('offline'));
+    await select();
+    expect(component.active()).toBeNull();
+    api.watch.mock.calls[0][0]({ type: WebSocketEventType.Ready });
+    await vi.waitFor(() => expect(component.active()?.id).toBe('a'));
+    expect(component.chatError()).toBe('');
   });
 });

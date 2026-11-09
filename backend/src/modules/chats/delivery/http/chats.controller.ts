@@ -1,5 +1,14 @@
+import { ApiServiceUnavailableResponse } from '@nestjs/swagger';
+import {
+  SendAttachmentDto,
+  AttachmentResponseDto,
+} from './dto/attachment.dto.js';
+import { MessageParamsDto, ReadMessagesDto } from './dto/message-params.dto.js';
 import {
   Body,
+  Patch,
+  Delete,
+  HttpCode,
   Controller,
   Get,
   Param,
@@ -15,6 +24,7 @@ import {
   ApiCreatedResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
+  ApiNoContentResponse,
   ApiOperation,
   ApiParam,
   ApiQuery,
@@ -65,10 +75,14 @@ function toChatDetailsResponse(
       id: chat.recipient.id,
       username: chat.recipient.username,
       displayName: chat.recipient.displayName,
+      avatarUrl: chat.recipient.avatarUrl ?? null,
     },
   };
 }
 
+@ApiServiceUnavailableResponse({
+  description: 'Object storage is temporarily unavailable.',
+})
 @ApiTags('Chats')
 @ApiBearerAuth()
 @Controller('chats')
@@ -206,6 +220,115 @@ class ChatsController {
       senderId: request.auth.user.id,
       text: dto.text,
     });
+  }
+
+  @Post(':chatId/attachments')
+  @UseGuards(ChatMemberGuard)
+  @ApiOperation({ summary: 'Send an image or file up to 5 MiB' })
+  @ApiCreatedResponse({ type: SendMessageResponseDto })
+  @ApiBadRequestResponse({ description: 'Invalid file or filename.' })
+  @ApiNotFoundResponse({ description: 'Chat not found.' })
+  @ApiUnauthorizedResponse({ description: 'Inactive session.' })
+  async sendAttachment(
+    @Param() params: ChatIdParamsDto,
+    @Body() dto: SendAttachmentDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<SendMessageResponseDto> {
+    return this.chats.sendFile({
+      chatId: params.chatId,
+      senderId: request.auth.user.id,
+      name: dto.name,
+      mediaType: dto.mediaType,
+      bytes: Buffer.from(dto.content, 'base64'),
+    });
+  }
+
+  @Get(':chatId/messages/:messageId/attachment')
+  @UseGuards(ChatMemberGuard)
+  @ApiOperation({ summary: 'Download an attachment as base64 (members only)' })
+  @ApiOkResponse({ type: AttachmentResponseDto })
+  @ApiBadRequestResponse({ description: 'Invalid ID.' })
+  @ApiNotFoundResponse({
+    description: 'Chat, message or attachment not found.',
+  })
+  @ApiUnauthorizedResponse({ description: 'Inactive session.' })
+  async getAttachment(
+    @Param() params: MessageParamsDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<AttachmentResponseDto> {
+    const file = await this.chats.getFile(
+      params.chatId,
+      params.messageId,
+      request.auth.user.id,
+    );
+
+    return {
+      name: file.name,
+      mediaType: file.mediaType,
+      content: Buffer.from(file.bytes).toString('base64'),
+    };
+  }
+
+  @Patch(':chatId/messages/:messageId')
+  @UseGuards(ChatMemberGuard)
+  @ApiOperation({ summary: 'Edit your own message' })
+  @ApiOkResponse({ type: SendMessageResponseDto })
+  @ApiBadRequestResponse({ description: 'Invalid ID or message text.' })
+  @ApiNotFoundResponse({ description: 'Chat or own message not found.' })
+  @ApiUnauthorizedResponse({ description: 'Inactive session.' })
+  async editMessage(
+    @Param() params: MessageParamsDto,
+    @Body() dto: SendMessageDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<SendMessageResponseDto> {
+    return this.chats.changeMessage({
+      chatId: params.chatId,
+      messageId: params.messageId,
+      userId: request.auth.user.id,
+      text: dto.text,
+    });
+  }
+
+  @Delete(':chatId/messages/:messageId')
+  @HttpCode(204)
+  @UseGuards(ChatMemberGuard)
+  @ApiOperation({ summary: 'Delete your own message' })
+  @ApiNoContentResponse({ description: 'Message deleted.' })
+  @ApiBadRequestResponse({ description: 'Invalid ID.' })
+  @ApiNotFoundResponse({ description: 'Chat or own message not found.' })
+  @ApiUnauthorizedResponse({ description: 'Inactive session.' })
+  async deleteMessage(
+    @Param() params: MessageParamsDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<void> {
+    await this.chats.changeMessage({
+      chatId: params.chatId,
+      messageId: params.messageId,
+      userId: request.auth.user.id,
+      text: null,
+    });
+  }
+
+  @Post(':chatId/read')
+  @HttpCode(204)
+  @UseGuards(ChatMemberGuard)
+  @ApiOperation({
+    summary: 'Mark received messages through a displayed message as read',
+  })
+  @ApiNoContentResponse({ description: 'Read state saved.' })
+  @ApiBadRequestResponse({ description: 'Invalid ID.' })
+  @ApiNotFoundResponse({ description: 'Chat not found.' })
+  @ApiUnauthorizedResponse({ description: 'Inactive session.' })
+  async markRead(
+    @Param() params: ChatIdParamsDto,
+    @Body() dto: ReadMessagesDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<void> {
+    await this.chats.markRead(
+      params.chatId,
+      request.auth.user.id,
+      dto.throughMessageId,
+    );
   }
 
   @Get(':chatId/messages')

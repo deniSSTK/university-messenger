@@ -1,3 +1,5 @@
+import { ACTIVITY_REPOSITORY } from './domain/chats/repository/activity.repository';
+import { ActivityHttpAdapter } from './domain/chats/repository/http/activity-http.adapter';
 import { USERS_REPOSITORY } from './domain/users/repository/users.repository';
 import { UsersHttpAdapter } from './domain/users/repository/http/users-http.adapter';
 import { CHATS_REPOSITORY } from './domain/chats/repository/chats.repository';
@@ -21,6 +23,7 @@ const appConfig: ApplicationConfig = {
     provideRouter(routes),
     provideAppInitializer(() => inject(Auth).restoreSession()),
     provideHttpClient(),
+    { provide: ACTIVITY_REPOSITORY, useExisting: ActivityHttpAdapter },
     { provide: USERS_REPOSITORY, useExisting: UsersHttpAdapter },
     { provide: CHATS_REPOSITORY, useExisting: ChatsHttpAdapter },
     { provide: AUTH_REPOSITORY, useExisting: AuthHttpAdapter },

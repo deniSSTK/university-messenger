@@ -1,12 +1,12 @@
 # University Messenger
 
-A full stack web messenger for direct communication. Users will be able to find each other, exchange messages in real time, and access their conversation history from a computer or phone.
+A full stack web messenger for direct communication. Users can find each other, exchange messages in real time, and access their conversation history from a computer or phone.
 
 The messenger is being developed as a university semester project. The team's goal is to complete the full development cycle: interface and API design, implementation, testing, automated builds, and server deployment.
 
 ## Current Status
 
-The backend provides authentication, user search, private conversations, and message history/sending APIs. The Angular client uses these HTTP endpoints for user search, conversation lists, and messaging. Real-time delivery remains planned.
+The backend and Angular client implement authentication, profiles with avatars, user search, private conversations, real-time updates, message history, message editing/deletion, unread counts, read receipts, typing indicators, and image/file sharing. CI checks and production deployment configuration are included. A public server has not yet been configured.
 
 Completed:
 
@@ -18,13 +18,23 @@ Completed:
 - Angular registration and login forms connected to the API, validation and error messages, logout, in-memory access tokens, cookie-based session restoration, shared token refresh/retries, and a protected `/chats` route.
 - Responsive auth forms and messaging screens, with user search, chat lists, conversation details, history, and sending connected to the HTTP API. Frontend tests cover auth, session handling, and chat interactions.
 
-Still planned: profile editing and avatars, real-time delivery, message editing and deletion, read receipts, unread counts, typing indicators, CI/CD, and deployment. Backend user search test coverage also remains to be added.
+Also completed:
 
-Private conversations are restricted to their members by the backend. Messages become visible after opening or explicitly refreshing a conversation; the client does not simulate live connections or delivery statuses.
+- Editable display names and PNG/JPEG/WebP avatars up to 256 KiB; avatar objects are stored in private S3.
+- Authenticated WebSocket notifications, automatic reconnection with session refresh, history synchronization after reconnect, and connection-loss notifications.
+- Author-only message editing/deletion, edited timestamps, unread counts, read receipts, and expiring typing indicators.
+- Automatic older-history loading while scrolling, with a manual pagination fallback.
+- Image and file uploads up to 5 MiB and authenticated downloads restricted to chat members.
+- Unit, HTTP, PostgreSQL and WebSocket tests for new functionality, including user search exclusions and literal underscore prefixes.
+- GitHub Actions checks, container builds, and an optional manual SSH deployment job; Docker Compose applies migrations before starting the API, and Caddy serves the client over HTTPS.
+
+Pending infrastructure: configure the production server/domain and GitHub deployment secrets, then run the first deployment.
+
+Private conversations are restricted to their members by the backend. WebSocket notifications synchronize active history and conversation lists after sends, edits, deletions, and read updates. A message is marked read only through the newest displayed message while the page is visible and the conversation is at the bottom. Typing indicators expire after four seconds without another event.
 
 ## Core Features
 
-The following sections describe the target scope; see Current Status and Development Roadmap for implementation progress.
+The following sections describe the implemented application scope; see Deployment and Quality for remaining infrastructure setup.
 
 ### Account and Profile
 
@@ -64,26 +74,26 @@ The following sections describe the target scope; see Current Status and Develop
 
 ## Stretch Goal
 
-After completing the core version, add image and file sharing with file size limits. This will require attachment uploads, storage, and access control.
+Image and file sharing is implemented with a 5 MiB limit per file. Binary content is stored in a private S3 bucket. PostgreSQL stores object keys, names, MIME types and sizes; back up both the database and the bucket. Downloads require an active session and chat membership; deleted messages cannot be downloaded. Files download as attachments rather than executing or rendering active content in the app.
 
 The core version includes direct conversations only. Group chats, channels, calls, bots, reactions, push notifications, and end-to-end encryption are outside the project scope.
 
 ## Technology and Architecture
 
-| Component         | Technologies and Purpose                                   | Status                       |
-| ----------------- | ---------------------------------------------------------- | ---------------------------- |
+| Component         | Technologies and Purpose                                   | Status                                                         |
+| ----------------- | ---------------------------------------------------------- | -------------------------------------------------------------- |
 | Backend           | TypeScript, Node.js, NestJS - API and server logic         | Auth, user search, and private chat APIs documented in Swagger |
-| Database          | PostgreSQL, Prisma - data storage and migrations           | Models, migrations, and user search index implemented |
-| Local Environment | Docker Compose - local PostgreSQL                          | Prepared                     |
-| Frontend          | Angular, TypeScript - responsive web interface             | Auth, user search, and direct messaging connected to the API |
-| Messaging         | WebSocket - real-time messages and conversation events     | Planned                      |
-| Testing           | Jest, Supertest - unit and end-to-end tests                | Auth unit, HTTP, and database scenarios |
-| Frontend Testing  | Vitest, Angular HTTP testing utilities                    | Auth, search, and chat tests |
-| CI/CD             | GitHub Actions - checks, builds, and deployment automation | Planned                      |
+| Database          | PostgreSQL, Prisma - data storage and migrations           | Models, migrations, and user search index implemented          |
+| Local Environment | Docker Compose - local PostgreSQL                          | Prepared                                                       |
+| Frontend          | Angular, TypeScript - responsive web interface             | Auth, user search, and direct messaging connected to the API   |
+| Messaging         | WebSocket - real-time messages and conversation events     | Implemented                                                    |
+| Testing           | Jest, Supertest - unit and end-to-end tests                | Auth unit, HTTP, and database scenarios                        |
+| Frontend Testing  | Vitest, Angular HTTP testing utilities                     | Auth, search, and chat tests                                   |
+| CI/CD             | GitHub Actions - checks, builds, and deployment automation | Implemented                                                    |
 
-The Angular frontend uses HTTP for authentication, user search, and direct messaging. PostgreSQL stores users, conversations, and messages. WebSocket delivery is planned for new messages, read receipts, and typing events.
+The Angular frontend uses HTTP for authentication, user search, and direct messaging. PostgreSQL stores users, conversations, and messages. WebSocket notifications synchronize new messages, edits/deletions, unread counts and read receipts; typing events are transient.
 
-Authentication and conversation membership checks must be enforced on the server for both HTTP requests and WebSocket events. Passwords must be stored as hashes. Only the author of a message will be able to edit or delete it.
+Authentication and conversation membership checks must be enforced on the server for both HTTP requests and WebSocket events. Passwords must be stored as hashes. Only the author of a message can edit or delete it.
 
 ## Repository Structure
 
@@ -103,10 +113,13 @@ Authentication and conversation membership checks must be enforced on the server
 │   ├── src/app/core/     # Shared HTTP client, session handling, and route guards
 │   ├── src/app/domain/   # Auth, users, and chats features
 │   └── src/environments/ # Development and production API configuration
+├── pkg/events/           # Shared WebSocket event enum (ESM/CommonJS)
 ├── AGENTS.md             # Repository-wide development rules
 ├── LICENSE
 └── README.md
 ```
+
+Shared WebSocket event names live in `pkg/events/src/websocket-event-type.ts`, exported by the local `@university-messenger/events` package. Backend and frontend import the same enum; installation/build/test scripts compile the shared package automatically. See [shared package instructions](pkg/README.md). Docker builds use the repository root as their context (`docker build -f backend/Dockerfile .` or `docker build -f frontend/Dockerfile .`).
 
 The backend and frontend share a single repository. Install dependencies and run commands from each application's directory.
 
@@ -131,12 +144,12 @@ operations rather than the underlying client. Unit tests for services mock the d
 
 HTTP controllers read input according to where the client sends it:
 
-| Decorator | Source | Example |
-| --- | --- | --- |
-| `@Body()` | JSON request body | Registration, login, or a message payload |
-| `@Param()` | URL path parameters | `chatId` in `/chats/:chatId` |
-| `@Query()` | URL query parameters | `/users?search=alice` |
-| `@Req()` | Request context | Refresh cookie or the session attached by a guard |
+| Decorator  | Source               | Example                                           |
+| ---------- | -------------------- | ------------------------------------------------- |
+| `@Body()`  | JSON request body    | Registration, login, or a message payload         |
+| `@Param()` | URL path parameters  | `chatId` in `/chats/:chatId`                      |
+| `@Query()` | URL query parameters | `/users?search=alice`                             |
+| `@Req()`   | Request context      | Refresh cookie or the session attached by a guard |
 
 These decorators can be combined in one endpoint. Request objects, cookies, and Express
 response objects stay in delivery; services receive explicit application inputs.
@@ -206,17 +219,18 @@ Authentication endpoints are available under `/auth`, user search at `GET /users
 Runtime settings are loaded and validated in `backend/src/core/config` and injected through `AppConfig`.
 Prisma CLI reuses the database config reader without requiring JWT settings.
 
-| Variable | Purpose | Default or example |
-| --- | --- | --- |
-| `DB_USER`, `DB_PASSWORD`, `DB_NAME` | Required PostgreSQL credentials and database name | Local values in `.env.example` |
-| `DB_HOST` | PostgreSQL host | Defaults to `localhost` |
-| `DB_PORT` | PostgreSQL port | Defaults to `5432`; local Compose example uses `6012` |
-| `PORT` | HTTP server port | Defaults to `3000` |
-| `NODE_ENV` | Environment; `production` enables Secure refresh cookies | Example: `development` |
-| `FRONTEND_ORIGIN` | Allowed frontend origin; HTTPS required in production | Defaults to `http://localhost:4200` |
-| `JWT_SECRET` | Required signing secret, at least 32 bytes | Generate your own value |
-| `JWT_ACCESS_TOKEN_TTL` | Required access token lifetime in seconds | `900` (15 minutes) |
-| `JWT_SESSION_TTL` | Required session lifetime in milliseconds | `604800000` (7 days) |
+| Variable                            | Purpose                                                          | Default or example                                    |
+| ----------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------- |
+| `DB_USER`, `DB_PASSWORD`, `DB_NAME` | Required PostgreSQL credentials and database name                | Local values in `.env.example`                        |
+| `DB_HOST`                           | PostgreSQL host                                                  | Defaults to `localhost`                               |
+| `DB_PORT`                           | PostgreSQL port                                                  | Defaults to `5432`; local Compose example uses `6012` |
+| `PORT`                              | HTTP server port                                                 | Defaults to `3000`                                    |
+| `NODE_ENV`                          | Environment; `production` enables Secure refresh cookies         | Example: `development`                                |
+| `AUTH_COOKIE_PATH`                  | Refresh cookie path; use `/api/auth` behind the production proxy | Defaults to `/auth` locally                           |
+| `FRONTEND_ORIGIN`                   | Allowed frontend origin; HTTPS required in production            | Defaults to `http://localhost:4200`                   |
+| `JWT_SECRET`                        | Required signing secret, at least 32 bytes                       | Generate your own value                               |
+| `JWT_ACCESS_TOKEN_TTL`              | Required access token lifetime in seconds                        | `900` (15 minutes)                                    |
+| `JWT_SESSION_TTL`                   | Required session lifetime in milliseconds                        | `604800000` (7 days)                                  |
 
 Both TTL values must be positive safe integers. Email casing is preserved; email lookup and uniqueness are case-insensitive.
 Usernames are trimmed and converted to lowercase. Passwords are not trimmed or lowercased.
@@ -233,17 +247,17 @@ Refreshing rotates the refresh token without extending the configured session li
 
 ### Authentication API
 
-| Endpoint | Input | Successful response |
-| --- | --- | --- |
-| `POST /auth/register` | JSON: `email`, `username`, `displayName`, `password` | `201`: user and access token; refresh cookie |
-| `POST /auth/login` | JSON: `email`, `password` | `200`: user and access token; refresh cookie |
-| `POST /auth/refresh` | `refreshToken` cookie; no JSON body required | `200`: user and new access token; rotated refresh cookie |
-| `POST /auth/logout` | `Authorization: Bearer <accessToken>` | `204`: current session revoked and refresh cookie cleared |
-| `GET /auth/me` | `Authorization: Bearer <accessToken>` | `200`: current public user |
+| Endpoint              | Input                                                | Successful response                                       |
+| --------------------- | ---------------------------------------------------- | --------------------------------------------------------- |
+| `POST /auth/register` | JSON: `email`, `username`, `displayName`, `password` | `201`: user and access token; refresh cookie              |
+| `POST /auth/login`    | JSON: `email`, `password`                            | `200`: user and access token; refresh cookie              |
+| `POST /auth/refresh`  | `refreshToken` cookie; no JSON body required         | `200`: user and new access token; rotated refresh cookie  |
+| `POST /auth/logout`   | `Authorization: Bearer <accessToken>`                | `204`: current session revoked and refresh cookie cleared |
+| `GET /auth/me`        | `Authorization: Bearer <accessToken>`                | `200`: current public user                                |
 
 Register, login, and refresh return `{ user, accessToken, tokenType, expiresIn }`.
 `expiresIn` is measured in seconds. The public user contains `id`, `email`, `username`,
-`displayName`, `createdAt`, and `updatedAt`. Refresh tokens are sent in an HttpOnly cookie,
+`displayName`, `avatarUrl`, `createdAt`, and `updatedAt`. Refresh tokens are sent in an HttpOnly cookie,
 not in the JSON body. Password hashes and token hashes are never returned.
 
 Access tokens require an active, unexpired session. Logging out invalidates both token types
@@ -329,8 +343,8 @@ npm start
 Open [http://localhost:4200](http://localhost:4200) with the backend running at `http://localhost:3000`.
 The app provides `/login`, `/register`, protected `/chats`, and direct conversation URLs at `/chats/:chatId`. Conversation and message data is loaded from PostgreSQL through the backend API.
 
-Configure `apiUrl` in `frontend/src/environments/environment.development.ts` for local development
-and `frontend/src/environments/environment.ts` for production. The backend's `FRONTEND_ORIGIN`
+Configure `apiUrl` in `frontend/src/environments/environment.development.ts` for local development.
+The production build uses `/api` on the same HTTPS origin; Caddy forwards it to the backend. The backend's `FRONTEND_ORIGIN`
 must match the frontend origin. Use `localhost` for both services locally so refresh cookies work.
 Access tokens stay in memory; session restoration uses the backend's HttpOnly cookie.
 
@@ -344,13 +358,110 @@ npm test -- --watch=false
 Frontend tests mock HTTP requests and do not require PostgreSQL. Use the documented Node.js version:
 Node.js `22.19.0` is below the Angular CLI minimum and cannot run the frontend build or test commands.
 
+## S3 Object Storage
+
+New attachments and avatars are uploaded to private S3. PostgreSQL holds `Message.fileKey` and `User.avatarKey`, plus metadata. Failed database writes trigger object cleanup. Attachments download through the existing authenticated API, which verifies chat membership before reading S3. Avatar responses contain temporary signed GET URLs; internal object keys are not exposed as response fields. Signed avatar links expire after `S3_SIGNED_URL_TTL_SECONDS` (default 900 seconds); they are refreshed when profile/chat data is loaded again.
+
+Configure `S3_BUCKET`, `S3_REGION`, and optionally `S3_SIGNED_URL_TTL_SECONDS` in the backend environment. A bucket must be explicitly supplied in production. The backend uses the [AWS SDK default credential chain](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/setting-credentials-node.html): locally use an AWS profile or standard AWS credential environment variables; on EC2 assign an instance IAM role. No AWS credentials are sent to Angular or committed. A private bucket needs no browser upload CORS policy because uploads/downloads pass through the backend.
+
+Create an S3 bucket in your chosen region, keep Block Public Access enabled, and use the default SSE-S3 encryption. Adapt `deploy/s3-policy.example.json` to the bucket name and attach it to the application's IAM role; it limits Get/Put/Delete to `attachments/*` and `avatars/*`. See [S3 default encryption](https://docs.aws.amazon.com/AmazonS3/latest/userguide/default-encryption-faq.html). When using an EC2 role from Docker with IMDSv2, configure the instance metadata response hop limit to 2 as described in [AWS container metadata guidance](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html). Bucket creation and IAM setup are intentionally left for deployment.
+
+For local S3-compatible storage, set `S3_ENDPOINT` and `S3_FORCE_PATH_STYLE=true`, plus the provider's credentials through the same AWS environment variables. Custom production endpoints must use HTTPS. Development without an S3 connection still supports text messaging; file operations return `503` on storage failure and preserve the form for retry.
+
+### Moving existing database files
+
+The additive database migration preserves existing `fileData` and data-URL avatars. New writes never use those payload columns. To move existing content:
+
+```bash
+cd backend
+npm run migrate:apply
+npm run build
+npm run media:migrate
+```
+
+The migration uses only database/storage configuration, without requiring JWT secrets. It uploads in small batches, stores each key and clears that row's old binary/base64 payload only after a successful upload. Failed rows retain their original data; rerunning skips rows already migrated. Run it during a maintenance window with application writers stopped, and take a database backup first. Legacy reads remain supported until migration is complete. Soft-deleted message objects remain retained; downloading them is blocked by the API. Object retention/lifecycle cleanup can be configured separately when a retention policy is chosen.
+
+For Docker, after database migrations and before starting application writers:
+
+```bash
+docker compose --env-file .env.production -f compose.aws.yml run --rm --no-deps backend npm run media:migrate
+```
+
+### Shared frontend controls and SVGs
+
+Buttons, text inputs/textareas, form fields, file pickers, avatars, modal dialogs, auth cards and spinners live in `frontend/src/app/shared/ui/`. Auth and chat screens consume these components; native button/input components preserve existing form validation and keyboard behavior. SVGs each have their own Angular component under `shared/ui/icons/`. See the [UI component guide and requested SVG list](frontend/src/app/shared/ui/README.md).
+
+## Profile, Messages and Activity API
+
+All endpoints below require `Authorization: Bearer <accessToken>`. Missing sessions return `401`, invalid input returns `400`, and inaccessible chats/messages return `404` without revealing another user's resources. Request and response schemas are in Swagger.
+
+| Endpoint                                            | Behavior                                                                                                                                                                                                                                                                   |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PATCH /users/me`                                   | JSON `{ displayName, avatarUrl? }`; omit avatarUrl to preserve the current avatar, send null to remove it; name is trimmed and limited to 1–64 characters. Avatar is null or a PNG/JPEG/WebP base64 data URL, at most 256 KiB decoded. Returns the updated public profile. |
+| `POST /chats`                                       | JSON `{ recipientId }`; creates or returns the existing direct conversation.                                                                                                                                                                                               |
+| `GET /chats`                                        | Paginated conversations sorted by latest visible message, including `unreadCount`.                                                                                                                                                                                         |
+| `GET /chats/:chatId`                                | Conversation details and recipient profile, including avatar.                                                                                                                                                                                                              |
+| `GET /chats/:chatId/messages`                       | Newest-first messages; `limit` and opaque `cursor` load older history. Each message includes `editedAt`, `readAt`, and optional attachment metadata.                                                                                                                       |
+| `POST /chats/:chatId/messages`                      | JSON `{ text }`; nonblank text, at most 4000 Unicode code points.                                                                                                                                                                                                          |
+| `PATCH /chats/:chatId/messages/:messageId`          | JSON `{ text }`; only the author can edit an active message.                                                                                                                                                                                                               |
+| `DELETE /chats/:chatId/messages/:messageId`         | Author-only soft deletion, returns `204`. Removes the message from history and latest-message previews.                                                                                                                                                                    |
+| `POST /chats/:chatId/read`                          | JSON `{ throughMessageId }`; marks incoming messages through this displayed message read, returns `204`. Newer messages stay unread.                                                                                                                                       |
+| `POST /chats/:chatId/attachments`                   | JSON `{ name, mediaType, content }`; base64 content, 1 byte–5 MiB, filename up to 255 characters without path separators/control characters. Creates an attachment message.                                                                                                |
+| `GET /chats/:chatId/messages/:messageId/attachment` | Returns `{ name, mediaType, content }` with base64 content after membership checks.                                                                                                                                                                                        |
+
+WebSocket endpoint: `/events` locally, `/api/events` behind the production proxy. Browser `Origin` must match `FRONTEND_ORIGIN`. Send `{ "type": "auth", "token": "<access token>" }` within five seconds; credentials never enter the URL. The server responds `{ "type": "ready" }`. It checks active sessions and token expiry throughout the connection and checks membership before delivering each event.
+
+- Server `{ type: "changed", chatId }` automatically synchronizes authoritative HTTP data. The client refreshes every loaded conversation-list page and the loaded active history, including edits/deletions and unread counts. Reconnection and returning to a visible tab also reconcile missed changes. Transient synchronization failures retry automatically with backoff. There are no manual reload buttons in the chat list, conversation header or menu.
+- Client `{ type: "typing", chatId, typing: true|false }` broadcasts `{ type: "typing", chatId, userId, typing }` only to members. Events are rate limited per connection and indicators expire in the UI.
+- Heartbeats detect broken connections; the client reconnects with bounded exponential backoff and refreshes expired access tokens through the existing session mechanism.
+
+This deployment uses one API process for WebSocket fan-out. Multiple API replicas would require a shared event broker before scaling horizontally.
+
 ## Deployment and Quality
 
-By the end of the project, the frontend, backend, and PostgreSQL will be deployed on a server, with the application accessible over HTTPS. Data must persist across restarts and application updates. Secrets must be supplied through environment variables.
+For a step-by-step Russian guide covering a new DuckDNS address, AWS EC2/S3, first startup, backups and updates, see [DEPLOY.md](DEPLOY.md).
 
-GitHub Actions will run checks and builds when code changes. The deployment process must include database migrations. A link to the running messenger and deployment instructions will be added once the environment is ready.
+`.github/workflows/ci.yml` runs backend build/ESLint/unit tests, PostgreSQL HTTP/WebSocket scenarios, frontend build/tests, and both container builds on pushes and pull requests. The optional manual deployment job runs only for `main`, after all checks pass.
 
-Key testing scenarios include registration and sign-in, access restricted to a user's own conversations, sending and receiving messages, and message editing and deletion restricted to the author.
+Production startup on a Linux server with Docker Compose:
+
+1. Point a domain's DNS to the server and open ports 80/443. Clone this repository on the server.
+2. Copy `.env.production.example` to `.env.production`. Set `DOMAIN`, database credentials and a random signing secret (`openssl rand -hex 32`). Keep this file private and outside version control.
+3. Run `docker compose --env-file .env.production -f compose.production.yml up -d --build --wait`.
+4. Open `https://<DOMAIN>`. Caddy obtains TLS certificates, serves Angular routes and proxies `/api/*`, including WebSocket upgrades. Swagger is available at `https://<DOMAIN>/api/docs/`.
+
+The `migrate` service waits for healthy PostgreSQL and applies migrations before the API starts. PostgreSQL metadata persists in the database volume, file/avatar objects persist in S3, and TLS certificates persist separately. Back up PostgreSQL before deployments and schema changes. Do not remove named volumes when updating the application. Application rollback requires deploying the previous compatible revision; database migration rollback is a separate manual operation.
+
+For GitHub deployment, configure environment `production` and repository/environment secrets `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`, `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS` (verified SSH host-key entries). The server checkout must have read access to the repository and the deployment user must have Docker access. Run **Checks and deployment** manually on `main` with `deploy=true`. The job checks out the exact tested revision on the server and pulls the prebuilt images for that revision and starts `compose.aws.yml`, including migrations. Configure environment review rules in GitHub if deployment approval is desired.
+
+### AWS Free Tier without buying a domain
+
+Use `compose.aws.yml` to pull prebuilt images instead of compiling on a small EC2 instance. The CI publishes commit-tagged `linux/amd64` and `linux/arm64` images to GHCR on `main`; ARM instances such as t4g need the ARM image, which Docker selects automatically. The same workflow validates both image architectures. This Compose file sets memory limits, limits the Node heap and reduces PostgreSQL buffers/connections for a small single-host demonstration. Capacity for a busy public service has not been load tested.
+
+1. Select an EC2 Linux instance marked **Free tier eligible** for your account and architecture. AWS eligibility depends on account creation date, remaining credits and elapsed time; it is not a permanent free server. Accounts created from July 15, 2025 use credits and a free-plan period of up to six months. Check the [current AWS Free Tier rules](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-free-tier-usage.html) and your Billing dashboard, including EBS and public IPv4 usage.
+2. Install Docker Engine and the Compose plugin. Allow inbound TCP 80/443; restrict SSH 22 to your own address. PostgreSQL and the backend have no public host ports. Keep a persistent database volume and regular backups.
+3. Obtain a free hostname. [DuckDNS](https://www.duckdns.org/about.jsp) maps `your-project.duckdns.org` to the instance IP. Alternatively, set `DOMAIN=<PUBLIC_IP>.sslip.io`: [sslip.io/nip.io](https://sslip.io/) resolves the embedded address without registration and supports TLS issuance. Caddy obtains the certificate once ports 80/443 are reachable. Shared DNS providers can have certificate rate limits; use DuckDNS if issuance is blocked. A hostname that points to a changed EC2 address must be updated after stop/start.
+4. Copy `.env.production.example` to `.env.production` and set `DOMAIN`, secrets, and `BACKEND_IMAGE`/`FRONTEND_IMAGE` to the lowercase GHCR paths and commit SHA from a successful `main` workflow. Example image suffixes: `university-messenger-backend:<sha>` and `university-messenger-web:<sha>`. If packages are private, authenticate on the server with `docker login ghcr.io` using a read-packages token; public packages can be pulled anonymously. Never put a registry token in the repository.
+5. Run:
+
+   ```bash
+   docker compose --env-file .env.production -f compose.aws.yml pull
+   docker compose --env-file .env.production -f compose.aws.yml up -d --wait
+   ```
+
+   On subsequent updates, back up the database, change the image tags and run:
+
+   ```bash
+   docker compose --env-file .env.production -f compose.aws.yml pull
+   docker compose --env-file .env.production -f compose.aws.yml stop backend
+   docker compose --env-file .env.production -f compose.aws.yml run --rm migrate
+   docker compose --env-file .env.production -f compose.aws.yml run --rm --no-deps backend npm run media:migrate
+   docker compose --env-file .env.production -f compose.aws.yml up -d --wait
+   ```
+
+Open `https://<DOMAIN>`; buying a domain, Route 53, an ALB and RDS are unnecessary for this single-instance setup. Raw-IP HTTP is not the production configuration because session cookies require HTTPS. For a friendly free subdomain through GitHub, [is-a-dev/register](https://github.com/is-a-dev/register) is active, but its [terms](https://github.com/is-a-dev/register/blob/main/TERMS_OF_SERVICE.md) prohibit root sites behind login pages, so this messenger should use DuckDNS or sslip.io unless the provider explicitly approves the use case. [open-domains/register](https://github.com/open-domains/register) is archived as of July 2026.
+
+No server credentials or public deployment URL are committed. Deployment is intentionally deferred; the application and deployment files can be tested locally first.
 
 ## Development Roadmap
 
@@ -365,15 +476,16 @@ Key testing scenarios include registration and sign-in, access restricted to a u
 - [x] Add a responsive chat layout prototype and frontend auth/session tests.
 - [x] Merge the Angular authentication client into `main`.
 - [x] Connect frontend user search to the existing API.
-- [ ] Implement profile editing.
+- [x] Implement profile editing.
 - [x] Implement direct conversations.
-- [ ] Add real-time message delivery.
-- [ ] Add message editing, deletion, and read receipts.
-- [ ] Add typing indicators and unread message counts.
+- [x] Add real-time message delivery.
+- [x] Add message editing, deletion, and read receipts.
+- [x] Add typing indicators and unread message counts.
 - [x] Replace sample chats with real data and implement responsive conversation/history/message screens connected to the backend.
-- [ ] Add user search tests and cover conversation and messaging scenarios as they are implemented.
-- [ ] Configure CI/CD and deploy the application over HTTPS.
-- [ ] Add image and file attachments if time permits.
+- [x] Add user search tests and cover conversation and messaging scenarios as they are implemented.
+- [x] Configure CI/CD, container images and HTTPS deployment instructions.
+- [ ] Deploy to a public server (deferred until infrastructure is available).
+- [x] Add image and file attachments if time permits.
 
 ## Team
 
@@ -395,14 +507,14 @@ mock conversations in browser storage are not read, migrated, or uploaded. Their
 old `demo-*` URLs show the unavailable-chat state; open a recipient from search to
 create or find their real conversation.
 
-| Client operation | Backend request | Response used by the client |
-| --- | --- | --- |
-| Current account | `GET /auth/me` | `id`, `username`, `displayName` |
-| Open or reuse dialog | `POST /chats` with `{ recipientId }` | `id`, `recipient`, `createdAt` |
-| List chats | `GET /chats?page=1&limit=20` | `items` in server order and `meta.totalPages` |
-| Open chat URL | `GET /chats/:chatId` | `recipient` and chat details |
-| Latest/older history | `GET /chats/:chatId/messages?limit=30&cursor=...` | `items`, `nextCursor` |
-| Send | `POST /chats/:chatId/messages` with `{ text }` | The saved server message |
+| Client operation     | Backend request                                   | Response used by the client                   |
+| -------------------- | ------------------------------------------------- | --------------------------------------------- |
+| Current account      | `GET /auth/me`                                    | `id`, `username`, `displayName`               |
+| Open or reuse dialog | `POST /chats` with `{ recipientId }`              | `id`, `recipient`, `createdAt`                |
+| List chats           | `GET /chats?page=1&limit=20`                      | `items` in server order and `meta.totalPages` |
+| Open chat URL        | `GET /chats/:chatId`                              | `recipient` and chat details                  |
+| Latest/older history | `GET /chats/:chatId/messages?limit=30&cursor=...` | `items`, `nextCursor`                         |
+| Send                 | `POST /chats/:chatId/messages` with `{ text }`    | The saved server message                      |
 
 History responses are newest-first; the adapter reverses each page for chronological
 rendering. Cursors are opaque and are passed back unchanged. `403`/`404` responses
@@ -443,3 +555,5 @@ The 2026-11-05 verification run passed the frontend build, TypeScript test check
 82 frontend tests, 87 backend unit tests, and 37 backend e2e tests. Angular reported
 a component-style size warning. The PostgreSQL connections used UTC
 (`PGOPTIONS=-c timezone=UTC`).
+
+Verification, 2026-11-08 (S3/shared UI update): backend build, ESLint and 114 unit tests passed; 42 HTTP/PostgreSQL/WebSocket/S3-transport e2e tests and 93 frontend tests passed. The AWS SDK was exercised against a local HTTP S3 fixture, including exact-byte upload/download, SigV4 request headers, signed avatar URL expiry and object deletion. Database tests verify old payload migration, idempotency, access controls, name-only avatar preservation and avatar removal. Browser checks used a separate temporary database and the local S3 fixture: native shared form controls, profile dialog, avatar upload, name-only save, message actions and attachment upload/download worked. At 390px the document had no horizontal overflow and the composer remained visible. A real AWS bucket/account was not accessed. The earlier verification above describes the pre-S3 implementation.

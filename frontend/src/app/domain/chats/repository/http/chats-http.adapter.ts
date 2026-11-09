@@ -23,7 +23,12 @@ import type {
 } from './chats-http.types';
 
 function mapPerson(person: ChatPersonHttpResponse): ChatPersonRecord {
-  return { id: person.id, username: person.username, displayName: person.displayName };
+  return {
+    id: person.id,
+    username: person.username,
+    displayName: person.displayName,
+    avatarUrl: person.avatarUrl ?? null,
+  };
 }
 function mapMessage(message: ChatMessageHttpResponse): ChatMessageRecord {
   return {
@@ -31,6 +36,19 @@ function mapMessage(message: ChatMessageHttpResponse): ChatMessageRecord {
     senderId: message.senderId,
     text: message.text,
     createdAt: message.createdAt,
+    ...(message.editedAt !== undefined ? { editedAt: message.editedAt } : {}),
+    ...(message.readAt !== undefined ? { readAt: message.readAt } : {}),
+    ...(message.attachment !== undefined
+      ? {
+          attachment: message.attachment
+            ? {
+                name: message.attachment.name,
+                mediaType: message.attachment.mediaType,
+                size: message.attachment.size,
+              }
+            : null,
+        }
+      : {}),
   };
 }
 function mapDetails(chat: ChatDetailsHttpResponse): ChatRecord {
@@ -67,6 +85,7 @@ class ChatsHttpAdapter implements ChatsRepository {
           person: mapPerson(chat.recipient),
           lastMessage: chat.lastMessage ? mapMessage(chat.lastMessage) : null,
           activityAt: chat.lastActivityAt,
+          unreadCount: chat.unreadCount ?? 0,
         })),
         hasMore: response.meta.page < response.meta.totalPages,
       };
@@ -138,4 +157,5 @@ class ChatsHttpAdapter implements ChatsRepository {
     }
   }
 }
+
 export { ChatsHttpAdapter };

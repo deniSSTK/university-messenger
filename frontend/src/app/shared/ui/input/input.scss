@@ -1,0 +1,38 @@
+:host {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px;
+  color: #203347;
+  background: #fff;
+  border: 1px solid #d4dfe8;
+  border-radius: 10px;
+  font: inherit;
+  line-height: 1.4;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+:host:focus {
+  outline: none;
+  border-color: #5288c1;
+  box-shadow: 0 0 0 3px #5288c11a;
+}
+:host([aria-invalid='true']) {
+  border-color: #c94b57;
+}
+:host:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+:host([data-appearance='plain']) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+:host(textarea) {
+  resize: vertical;
+}

@@ -1,3 +1,7 @@
+import { FormField } from '../../../../shared/ui/form-field/form-field';
+import { AuthCard } from '../../../../shared/ui/auth-card/auth-card';
+import { Input } from '../../../../shared/ui/input/input';
+import { Button } from '../../../../shared/ui/button/button';
 import { Component, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { ReactiveFormsModule, FormGroup, FormControl, Validators } from '@angular/forms';
@@ -8,7 +12,7 @@ import { trimmedValidators, authErrorMessage, passwordMatchValidator } from '../
 @Component({
   selector: 'app-register',
   standalone: true,
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [Button, Input, AuthCard, FormField, ReactiveFormsModule, RouterLink],
   templateUrl: './register.html',
   styleUrl: './register.scss',
 })

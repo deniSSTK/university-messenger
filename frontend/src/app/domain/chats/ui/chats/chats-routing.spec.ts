@@ -25,6 +25,9 @@ describe('direct chat URLs', () => {
         {
           provide: ChatService,
           useValue: {
+            watch: () => () => {},
+            typing: () => {},
+            read: async () => {},
             list: async () => ({ chats: [], hasMore: false }),
             viewer: async () => ({ id: 'me', username: 'viewer', displayName: 'Me' }),
             get,

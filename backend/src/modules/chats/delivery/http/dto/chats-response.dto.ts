@@ -1,3 +1,4 @@
+import { AttachmentMetadataDto } from './attachment.dto.js';
 import { ApiProperty } from '@nestjs/swagger';
 import { UUID } from '../../../../../core/decorators/uuid.decorator.js';
 import { PaginatedResponseDto } from '../../../../../core/pagination/dto/paginated-response.dto.js';
@@ -13,6 +14,9 @@ class ChatParticipantDto {
 
   @ApiProperty({ example: CHATS_EXAMPLES.displayName })
   displayName!: string;
+
+  @ApiProperty({ type: String, nullable: true, example: null })
+  avatarUrl?: string | null;
 }
 
 class ChatMessageDto {
@@ -45,6 +49,17 @@ class ChatMessageDto {
     nullable: true,
   })
   editedAt!: Date | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    example: null,
+  })
+  readAt?: Date | null;
+
+  @ApiProperty({ type: AttachmentMetadataDto, nullable: true, example: null })
+  attachment?: AttachmentMetadataDto | null;
 }
 
 class ChatListItemDto {
@@ -63,6 +78,9 @@ class ChatListItemDto {
     format: 'date-time',
   })
   lastActivityAt!: Date;
+
+  @ApiProperty({ type: Number, minimum: 0, example: 0 })
+  unreadCount?: number;
 }
 
 class ListChatsResponseDto extends PaginatedResponseDto<ChatListItemDto> {

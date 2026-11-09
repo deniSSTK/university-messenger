@@ -23,6 +23,8 @@ const publicUserSelect = {
   email: true,
   username: true,
   displayName: true,
+  avatarUrl: true,
+  avatarKey: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.UserSelect;

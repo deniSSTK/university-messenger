@@ -1,9 +1,9 @@
-<div class="register-container">
-  <h1>Register</h1>
+<app-auth-card title="Register">
   <form [formGroup]="registerForm" (ngSubmit)="onSubmit()" [attr.aria-busy]="isLoading()">
-    <div class="form-group">
+    <app-form-field>
       <label for="register-email">Email</label>
       <input
+        appInput
         id="register-email"
         type="email"
         formControlName="email"
@@ -26,10 +26,11 @@
           }
         }
       </div>
-    </div>
-    <div class="form-group">
+    </app-form-field>
+    <app-form-field>
       <label for="register-username">Username</label>
       <input
+        appInput
         id="register-username"
         type="text"
         formControlName="username"
@@ -55,10 +56,11 @@
           }
         }
       </div>
-    </div>
-    <div class="form-group">
+    </app-form-field>
+    <app-form-field>
       <label for="register-displayName">Display name</label>
       <input
+        appInput
         id="register-displayName"
         type="text"
         formControlName="displayName"
@@ -78,10 +80,11 @@
           }
         }
       </div>
-    </div>
-    <div class="form-group">
+    </app-form-field>
+    <app-form-field>
       <label for="register-password">Password</label>
       <input
+        appInput
         id="register-password"
         type="password"
         formControlName="password"
@@ -104,10 +107,11 @@
           }
         }
       </div>
-    </div>
-    <div class="form-group">
+    </app-form-field>
+    <app-form-field>
       <label for="register-confirmPassword">Confirm password</label>
       <input
+        appInput
         id="register-confirmPassword"
         type="password"
         formControlName="confirmPassword"
@@ -131,13 +135,18 @@
           }
         }
       </div>
-    </div>
+    </app-form-field>
     @if (errorMessage()) {
       <p class="api-error" role="alert">{{ errorMessage() }}</p>
     }
-    <button type="submit" [disabled]="registerForm.invalid || isLoading()">
+    <button
+      appButton
+      variant="primary"
+      type="submit"
+      [disabled]="registerForm.invalid || isLoading()"
+    >
       {{ isLoading() ? 'Registering...' : 'Create account' }}
     </button>
   </form>
   <a class="nav-link" routerLink="/login">Already have an account? Log in</a>
-</div>
+</app-auth-card>

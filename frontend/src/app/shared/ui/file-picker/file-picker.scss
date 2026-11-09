@@ -1,0 +1,36 @@
+:host {
+  display: inline-block;
+  max-width: 100%;
+}
+label {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  color: #315779;
+  background: #edf3f8;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+small {
+  color: #6b7c8b;
+  font-size: 11px;
+}
+input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+label:focus-within {
+  outline: 3px solid #9ac2ed;
+  outline-offset: 2px;
+}
+label:has(input:disabled) {
+  opacity: 0.5;
+  cursor: default;
+}

@@ -6,7 +6,12 @@
     "start": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "build:pkg": "npm --prefix ../pkg/events run build",
+    "prepare": "npm run build:pkg",
+    "prebuild": "npm run build:pkg",
+    "pretest": "npm run build:pkg",
+    "prestart": "npm run build:pkg"
   },
   "private": true,
   "packageManager": "npm@11.3.0",
@@ -19,7 +24,8 @@
     "@angular/router": "^22.2.0",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
-    "zone.js": "^0.16.3"
+    "zone.js": "^0.16.3",
+    "@university-messenger/events": "file:../pkg/events"
   },
   "devDependencies": {
     "@angular/build": "^22.2.3",

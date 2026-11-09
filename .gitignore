@@ -83,3 +83,4 @@ backend/src/generated/prisma/
 
 .vscode/
 generated/
+.env.production

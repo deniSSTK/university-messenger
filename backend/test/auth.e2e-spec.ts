@@ -189,6 +189,7 @@ describeDatabase('Auth API (PostgreSQL)', () => {
         'email',
         'username',
         'displayName',
+        'avatarUrl',
         'createdAt',
         'updatedAt',
       ].sort(),

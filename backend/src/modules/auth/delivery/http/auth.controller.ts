@@ -1,3 +1,4 @@
+import { ApiServiceUnavailableResponse } from '@nestjs/swagger';
 import {
   Body,
   Controller,
@@ -34,6 +35,9 @@ import { AuthService } from '../../service/auth.service.js';
 import type { AuthenticatedRequest } from './auth-http.types.js';
 import { AuthResponseDto, PublicUserDto } from './dto/auth-response.dto.js';
 
+@ApiServiceUnavailableResponse({
+  description: 'Object storage is temporarily unavailable.',
+})
 @ApiTags('Auth')
 @ApiForbiddenResponse({
   description: 'Request origin is not allowed (POST endpoints).',
@@ -186,7 +190,7 @@ class AuthController {
       httpOnly: true,
       secure: this.config.secureCookies,
       sameSite: 'lax',
-      path: '/auth',
+      path: this.config.authCookiePath,
     };
   }
 }

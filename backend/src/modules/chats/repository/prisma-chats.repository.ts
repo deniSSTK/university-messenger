@@ -12,12 +12,16 @@ import type {
   FindMessagesInput,
   FindMessagesResult,
   SendMessageInput,
+  ChangeMessageInput,
+  AttachmentData,
 } from '../domain/chats.repository.js';
 
 const participantSelect = {
   id: true,
   username: true,
   displayName: true,
+  avatarUrl: true,
+  avatarKey: true,
 } as const;
 
 const messageSelect = {
@@ -27,6 +31,10 @@ const messageSelect = {
   senderId: true,
   createdAt: true,
   editedAt: true,
+  readAt: true,
+  fileName: true,
+  fileType: true,
+  fileSize: true,
   sender: { select: participantSelect },
 } as const;
 
@@ -64,6 +72,14 @@ function mapMessage(
     sender: message.sender,
     createdAt: message.createdAt,
     editedAt: message.editedAt,
+    readAt: message.readAt,
+    attachment: message.fileName
+      ? {
+          name: message.fileName,
+          mediaType: message.fileType ?? 'application/octet-stream',
+          size: message.fileSize ?? 0,
+        }
+      : null,
   };
 }
 
@@ -209,6 +225,17 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
           where: { id: { in: ids } },
           select: {
             ...selectPrivateChat(currentUserId),
+            _count: {
+              select: {
+                messages: {
+                  where: {
+                    deletedAt: null,
+                    readAt: null,
+                    senderId: { not: currentUserId },
+                  },
+                },
+              },
+            },
             messages: {
               where: { deletedAt: null },
               orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -234,6 +261,7 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
             recipient: chat.recipient,
             lastMessage: latest ? mapMessage(latest) : null,
             lastActivityAt: latest?.createdAt ?? chat.createdAt,
+            unreadCount: row._count.messages,
           };
         });
 
@@ -298,6 +326,14 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
           chatId: input.chatId,
           senderId: input.senderId,
           text: input.text,
+          ...(input.file
+            ? {
+                fileName: input.file.name,
+                fileType: input.file.mediaType,
+                fileSize: input.file.size,
+                fileKey: input.file.key,
+              }
+            : {}),
           createdAt: activity.activityAt,
         },
         select: messageSelect,
@@ -309,6 +345,96 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
       });
 
       return mapMessage(message);
+    });
+  }
+
+  async findAttachment(
+    chatId: string,
+    messageId: string,
+  ): Promise<AttachmentData | null> {
+    const message = await this.prisma.message.findFirst({
+      where: { id: messageId, chatId, deletedAt: null },
+      select: { fileName: true, fileType: true, fileData: true, fileKey: true },
+    });
+
+    if (!message?.fileName || (!message.fileData && !message.fileKey)) {
+      return null;
+    }
+
+    return {
+      name: message.fileName,
+      mediaType: message.fileType ?? 'application/octet-stream',
+      key: message.fileKey,
+      legacyBytes: message.fileData,
+    };
+  }
+
+  async changeMessage(input: ChangeMessageInput): Promise<ChatMessage | null> {
+    return this.prisma.$transaction(async (transaction) => {
+      const changed = await transaction.message.updateMany({
+        where: {
+          id: input.messageId,
+          chatId: input.chatId,
+          senderId: input.userId,
+          deletedAt: null,
+          chat: {
+            deletedAt: null,
+            members: { some: { userId: input.userId, deletedAt: null } },
+          },
+        },
+        data:
+          input.text === null
+            ? { deletedAt: new Date() }
+            : { text: input.text, editedAt: new Date() },
+      });
+
+      if (!changed.count) {
+        return null;
+      }
+
+      const message = await transaction.message.findUniqueOrThrow({
+        where: { id: input.messageId },
+        select: messageSelect,
+      });
+
+      return mapMessage(message);
+    });
+  }
+
+  async markRead(
+    chatId: string,
+    userId: string,
+    throughMessageId: string,
+  ): Promise<boolean> {
+    return this.prisma.$transaction(async (transaction) => {
+      const boundary = await transaction.message.findFirst({
+        where: { id: throughMessageId, chatId, deletedAt: null },
+        select: { createdAt: true, id: true },
+      });
+
+      if (!boundary) {
+        return false;
+      }
+
+      const result = await transaction.message.updateMany({
+        where: {
+          chatId,
+          senderId: { not: userId },
+          deletedAt: null,
+          readAt: null,
+          chat: {
+            deletedAt: null,
+            members: { some: { userId, deletedAt: null } },
+          },
+          OR: [
+            { createdAt: { lt: boundary.createdAt } },
+            { createdAt: boundary.createdAt, id: { lte: boundary.id } },
+          ],
+        },
+        data: { readAt: new Date() },
+      });
+
+      return result.count > 0;
     });
   }
 

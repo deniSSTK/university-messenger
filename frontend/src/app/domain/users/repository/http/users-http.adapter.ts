@@ -3,16 +3,36 @@ import { catchError, map, throwError } from 'rxjs';
 import { HttpClient } from '../../../../core/http/http-client.service';
 import { environment } from '../../../../../environments/environment';
 import { UsersRepositoryError } from '../users.repository';
-import type { UsersRepository, SearchUsersRepositoryInput } from '../users.repository';
+import type {
+  UsersRepository,
+  SearchUsersRepositoryInput,
+  UpdateProfileRepositoryInput,
+} from '../users.repository';
 
 interface SearchUsersHttpResponse {
   items: { id: string; username: string; displayName: string }[];
   meta: { page: number; limit: number; total: number; totalPages: number };
 }
 
+interface UpdateProfileHttpRequest {
+  displayName: string;
+  avatarUrl?: string | null;
+}
+
 @Injectable({ providedIn: 'root' })
 class UsersHttpAdapter implements UsersRepository {
   private http = inject(HttpClient);
+
+  updateProfile(input: UpdateProfileRepositoryInput) {
+    const request: UpdateProfileHttpRequest = {
+      displayName: input.displayName,
+      avatarUrl: input.avatarUrl,
+    };
+    return this.http.patch<unknown>(`${environment.apiUrl}/users/me`, request).pipe(
+      map(() => undefined),
+      catchError(() => throwError(() => new UsersRepositoryError())),
+    );
+  }
 
   search(input: SearchUsersRepositoryInput) {
     return this.http

@@ -1,3 +1,8 @@
+import { MediaModule } from '../media/media.module.js';
+import {
+  OBJECT_STORAGE,
+  type ObjectStorage,
+} from '../media/domain/object-storage.port.js';
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PrismaModule } from '../../prisma/prisma.module.js';
@@ -19,6 +24,7 @@ import { PasswordService } from './service/password.service.js';
   imports: [
     PrismaModule,
     AppConfigModule,
+    MediaModule,
     JwtModule.registerAsync({
       imports: [AppConfigModule],
       inject: [AppConfig],
@@ -43,13 +49,20 @@ import { PasswordService } from './service/password.service.js';
     { provide: AUTH_REPOSITORY, useClass: PrismaAuthRepository },
     {
       provide: AuthService,
-      inject: [AUTH_REPOSITORY, PasswordService, AccessTokenService, AppConfig],
+      inject: [
+        AUTH_REPOSITORY,
+        PasswordService,
+        AccessTokenService,
+        AppConfig,
+        OBJECT_STORAGE,
+      ],
       useFactory: (
         repository: AuthRepository,
         passwords: PasswordService,
         tokens: AccessTokenService,
         config: AppConfig,
-      ) => new AuthService(repository, passwords, tokens, config),
+        storage: ObjectStorage,
+      ) => new AuthService(repository, passwords, tokens, config, storage),
     },
     AccessTokenService,
     PasswordService,
