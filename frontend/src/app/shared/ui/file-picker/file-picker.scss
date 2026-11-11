@@ -25,6 +25,26 @@ input {
   width: 100%;
   opacity: 0;
   cursor: pointer;
+  height: 100%;
+}
+:host(.icon-only) label {
+  width: 44px;
+  height: 44px;
+  padding: 10px;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--chat-muted, #7f91a4);
+}
+:host(.icon-only) label:hover {
+  background: #ffffff0a;
+}
+:host(.icon-only) span,
+:host(.icon-only) small {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
 }
 label:focus-within {
   outline: 3px solid #9ac2ed;

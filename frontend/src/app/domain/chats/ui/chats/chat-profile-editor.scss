@@ -1,3 +1,15 @@
+:host {
+  --dialog-color: #f5f5f5;
+  --dialog-background: #17212b;
+}
+#profile-name {
+  background: #242f3d;
+  color: #f5f5f5;
+  border-color: #3b5368;
+}
+label[for='profile-name'] {
+  color: #a4b8ca;
+}
 form {
   display: grid;
   gap: 16px;

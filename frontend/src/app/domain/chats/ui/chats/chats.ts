@@ -802,6 +802,12 @@ class Chats {
     }
   }
 
+  mediaLoaded(): void {
+    if (!this.showScrollDown()) {
+      this.scrollToBottom();
+    }
+  }
+
   async downloadFile(message: MessageView) {
     const chatId = this.selectedId();
     if (!chatId) {

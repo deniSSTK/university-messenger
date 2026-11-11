@@ -1,8 +1,6 @@
 <div class="chat-layout" [class.dialog-open]="selectedId()" (keydown.escape)="closeMenus()">
   @if (accountMenuOpen() || chatMenuOpen()) {
     <button
-      appButton
-      variant="bare"
       type="button"
       class="menu-backdrop"
       aria-label="Закрити меню"
@@ -82,9 +80,9 @@
     }
     <div class="sidebar-content" [attr.aria-busy]="searching() ? searchLoading() : listLoading()">
       <h1 class="sr-only">{{ searching() ? 'Результати пошуку' : 'Чати' }}</h1>
-      <div class="section-label">
-        {{ searching() ? 'Глобальний пошук' : 'Особисті повідомлення' }}
-      </div>
+      @if (searching()) {
+        <div class="section-label">Глобальний пошук</div>
+      }
       @if (searching()) {
         @if (searchLoading()) {
           <p class="status" role="status"><app-spinner />Шукаємо користувачів…</p>
@@ -194,7 +192,11 @@
                 [attr.aria-current]="selectedId() === chat.id ? 'page' : null"
                 (click)="openChat(chat.id)"
               >
-                <app-avatar [name]="chat.person.displayName" [src]="chat.person.avatarUrl" />
+                <app-avatar
+                  [name]="chat.person.displayName"
+                  [src]="chat.person.avatarUrl"
+                  [size]="56"
+                />
                 <span class="chat-info">
                   <span class="chat-header"
                     ><strong class="chat-name">{{ chat.person.displayName }}</strong
@@ -207,7 +209,7 @@
                       @if (last.senderId === viewer()?.id) {
                         <span class="sender-prefix">Ви: </span>
                       }
-                      {{ last.text }}
+                      <span class="preview-text">{{ last.attachment?.name ?? last.text }}</span>
                       @if (chat.unreadCount) {
                         <strong
                           class="unread-badge"
@@ -265,6 +267,7 @@
         @if (active(); as chat) {
           <app-avatar
             class="peer-avatar"
+            [size]="42"
             [name]="chat.person.displayName"
             [src]="chat.person.avatarUrl"
           />
@@ -375,11 +378,13 @@
                     [attr.data-message-id]="row.message.id"
                   >
                     <app-chat-bubble
+                      [chatId]="selectedId()!"
                       [message]="row.message"
                       [own]="row.message.senderId === viewer()?.id"
                       (edit)="beginEdit(row.message)"
                       (remove)="deleteMessage(row.message)"
                       (download)="downloadFile(row.message)"
+                      (mediaLoaded)="mediaLoaded()"
                     />
                   </li>
                 }
@@ -437,13 +442,13 @@
               </button>
             </div>
           }
-          <app-file-picker
-            label="Прикріпити файл"
-            hint="до 5 МіБ"
-            [disabled]="actionBusy()"
-            (fileSelected)="uploadFile($event)"
-          />
           <form class="composer" (submit)="$event.preventDefault(); send()">
+            <app-file-picker
+              label="Прикріпити файл до 5 МіБ"
+              [iconOnly]="true"
+              [disabled]="actionBusy()"
+              (fileSelected)="uploadFile($event)"
+            />
             <label class="sr-only" for="message-text">Повідомлення</label
             ><textarea
               appInput

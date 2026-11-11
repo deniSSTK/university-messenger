@@ -1,23 +1,25 @@
-@use '../../../../styles/variables' as *;
 :host {
   position: absolute;
+  z-index: 21;
   top: 58px;
   left: 12px;
-  z-index: 21;
   width: 290px;
   max-width: calc(100vw - 24px);
-  border-radius: 12px;
-  background: $bg-white;
-  box-shadow: 0 6px 24px #172b3c26;
-  color: #172b3c;
-  padding: 8px 0;
+  padding: 6px;
+  border: 1px solid #ffffff08;
+  border-radius: 8px;
+  background: var(--chat-raised, #202e3b);
+  color: #f5f5f5;
+  box-shadow: 0 6px 24px #0005;
 }
 .account-summary {
-  user-select: none;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid #ffffff0a;
+  user-select: none;
 }
 .account-summary > div {
   display: grid;
@@ -25,54 +27,45 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.avatar {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  color: white;
-  background: $avatar-blue;
-  font-size: 17px;
+.account-summary strong {
+  font-size: 15px;
+  font-weight: 600;
 }
-.account-summary span:not(.avatar) {
+.account-summary span {
   font-size: 13px;
-  color: $text-secondary;
+  color: #7f91a4;
 }
 .menu-note {
-  padding: 8px 16px;
-  line-height: 1.5;
+  padding: 8px 12px;
   font-size: 12px;
-  color: $text-secondary;
+  line-height: 1.5;
+  color: #a4b8ca;
 }
 .error {
-  color: #b42318;
+  color: #f37583;
 }
 .logout-btn {
   display: flex;
   align-items: center;
   gap: 16px;
   width: 100%;
+  padding: 12px;
   border: 0;
-  padding: 12px 18px;
-  color: $error-color;
+  border-radius: 4px;
   background: transparent;
+  color: inherit;
   text-align: left;
-  cursor: pointer;
   font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.logout-btn:last-child {
+  color: #f37583;
 }
 .logout-btn:hover {
-  background: $bg-light;
+  background: #ffffff0a;
 }
 .logout-btn:disabled {
   opacity: 0.45;
   cursor: default;
-}
-
-.avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: inherit;
 }

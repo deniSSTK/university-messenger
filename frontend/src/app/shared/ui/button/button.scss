@@ -19,7 +19,7 @@
   color: white;
   text-decoration: none;
 }
-:host:hover:not(:disabled) {
+:host([data-variant='primary']):hover:not(:disabled) {
   background: #4178b2;
 }
 :host:focus-visible {

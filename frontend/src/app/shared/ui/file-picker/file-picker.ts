@@ -17,12 +17,14 @@ import { IconPaperclip } from '../icons/paperclip';
       (change)="select($event)"
   /></label>`,
   styleUrl: './file-picker.scss',
+  host: { '[class.icon-only]': 'iconOnly()' },
 })
 class FilePicker {
   readonly label = input('Прикріпити файл');
   readonly hint = input('');
   readonly accept = input('');
   readonly disabled = input(false);
+  readonly iconOnly = input(false);
   readonly fileSelected = output<Event>();
   select(event: Event): void {
     this.fileSelected.emit(event);

@@ -435,7 +435,12 @@ describe('chat screen', () => {
     fixture.detectChanges();
     expect(component.accountMenuOpen()).toBe(true);
     expect((fixture.nativeElement as HTMLElement).querySelector('.logout-btn')).not.toBeNull();
-    component.closeMenus();
+    const backdrop = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>(
+      '.menu-backdrop',
+    );
+    expect(backdrop).not.toBeNull();
+    expect(backdrop!.hasAttribute('appButton')).toBe(false);
+    backdrop!.click();
     expect(component.accountMenuOpen()).toBe(false);
   });
   it('shows an obsolete mock URL as an unavailable chat', async () => {

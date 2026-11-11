@@ -1,85 +1,185 @@
-@use '../../../../styles/variables' as *;
 :host {
   display: block;
-  max-width: min(80%, 600px);
   min-width: 64px;
+  max-width: min(80%, 600px);
 }
 .message {
   position: relative;
-  border-radius: 15px 15px 15px 4px;
-  padding: 8px 11px 7px;
-  background: $bg-white;
-  box-shadow: 0 1px 1px #172b3c12;
+  padding: 7px 11px 5px;
+  border-radius: 14px 14px 14px 4px;
+  background: #182533;
+  color: #f5f5f5;
+  font-size: 15px;
   line-height: 21px;
+  box-shadow: 0 1px 1px #0002;
 }
 .message.own {
-  background: #dff2ff;
-  border-radius: 15px 15px 4px 15px;
+  border-radius: 14px 14px 4px 14px;
+  background: #2b5278;
 }
 p {
   margin: 0;
+  padding-right: 4px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-time {
-  margin-left: auto;
-  font-size: 11px;
-  line-height: 16px;
-  color: $text-secondary;
-}
-.message::after {
-  content: '';
-  display: block;
-  clear: both;
-}
-.own time {
-  color: $primary-hover;
-}
-@media (max-width: 768px) {
-  :host {
-    max-width: 91%;
-  }
-}
-
-small {
-  font-size: 10px;
-  margin-right: 6px;
-  opacity: 0.75;
-}
-.message-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 5px;
 }
 .message-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-  line-height: 14px;
+  justify-content: flex-end;
+  gap: 4px;
+  height: 16px;
+  margin-top: 2px;
+  color: #7f91a4;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
 }
-.message > button {
-  background: transparent;
+.own .message-meta {
+  color: #87b5dd;
+}
+.message-meta small {
+  font-size: 10px;
+}
+.receipt {
+  display: flex;
+  color: #6ab2f2;
+}
+.receipt app-icon-check,
+.receipt app-icon-check-double {
+  width: 17px;
+  height: 17px;
+}
+.attachment {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 100%;
+  min-height: 56px;
+  padding: 4px 12px 4px 0;
   border: 0;
+  background: transparent;
   color: inherit;
   text-align: left;
   font: inherit;
   cursor: pointer;
+}
+.file-icon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #5288c1;
+  color: white;
+}
+.file-details {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.file-details strong {
+  font-size: 14px;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
-
-.message-actions button {
-  width: 32px;
-  height: 32px;
-  padding: 7px;
-  color: #5f7c94;
+.file-details small {
+  font-size: 12px;
+  color: #a3bed4;
 }
-.receipt {
+.message-options {
+  position: absolute;
+  top: 0;
+  right: -30px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 28px;
+  padding: 4px;
+  border: 0;
+  border-radius: 50%;
+  background: #1b2938;
+  color: #8ba1b6;
+  cursor: pointer;
+  opacity: 0;
+}
+.own .message-options {
+  left: -30px;
+  right: auto;
+}
+.message:hover .message-options,
+.message:focus-within .message-options {
+  opacity: 1;
+}
+.message.has-photo {
+  padding: 0;
+  max-width: 420px;
+  overflow: clip;
+}
+.has-photo .message-options {
+  right: 8px;
+  top: 8px;
+  left: auto;
+}
+.has-photo .message-meta {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  height: auto;
+  margin: 0;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: #0008;
+  color: white;
+}
+.context-backdrop {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+.message-menu {
+  position: fixed;
+  z-index: 41;
+  width: 220px;
+  padding: 6px;
+  border: 1px solid #ffffff08;
+  border-radius: 8px;
+  background: #202e3b;
+  box-shadow: 0 6px 24px #0006;
+}
+.message-menu button {
   display: flex;
-  color: #5288c1;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #f5f5f5;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
-.receipt app-icon-check,
-.receipt app-icon-check-double {
-  width: 16px;
-  height: 16px;
+.message-menu button:hover {
+  background: #ffffff0a;
+}
+.message-menu .delete-action {
+  color: #f37583;
+}
+@media (hover: none) {
+  .message-options {
+    opacity: 0.7;
+  }
+}
+@media (max-width: 768px) {
+  :host {
+    max-width: 88%;
+  }
 }
