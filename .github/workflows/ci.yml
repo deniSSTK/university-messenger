@@ -98,14 +98,139 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
           tags: ${{ steps.images.outputs.prefix }}-web:${{ github.sha }}
+ 
+name: Checks and deployment
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy the checked commit to the configured server
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_USER: messenger
+          POSTGRES_PASSWORD: test-password
+          POSTGRES_DB: messenger_test
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U messenger -d messenger_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DB_USER: messenger
+      DB_PASSWORD: test-password
+      DB_NAME: messenger_test
+      TEST_DATABASE_URL: postgresql://messenger:test-password@localhost:5432/messenger_test
+      PGOPTIONS: -c timezone=UTC
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.20.0
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run prisma:generate
+      - run: npm run build
+      - run: npx eslint "{src,apps,libs,test}/**/*.ts"
+      - run: npm test -- --runInBand
+      - run: npm run test:e2e -- --runInBand
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.20.0
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test -- --watch=false
+
+  containers:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Lowercase image prefix
+        id: images
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: echo "prefix=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.images.outputs.prefix }}-backend:${{ github.sha }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: frontend/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.images.outputs.prefix }}-web:${{ github.sha }}
+
   deploy:
     if: github.event_name == 'workflow_dispatch' && inputs.deploy && github.ref == 'refs/heads/main'
     needs: [backend, frontend, containers]
     runs-on: ubuntu-latest
     environment: production
     concurrency: messenger-production
+
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
-      - name: Deploy checked revision over SSH
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: eu-north-1
+
+      - name: Install AWS Session Manager plugin
+        run: |
+          curl -fsSL \
+            https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb \
+            -o /tmp/session-manager-plugin.deb
+          sudo dpkg -i /tmp/session-manager-plugin.deb
+          session-manager-plugin --version
+
+      - name: Deploy checked revision over SSH via SSM
+        shell: bash
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
@@ -115,10 +240,40 @@ jobs:
           REVISION: ${{ github.sha }}
           REPOSITORY: ${{ github.repository }}
         run: |
+          set -euo pipefail
+
           install -m 700 -d ~/.ssh
+
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          cat > ~/.ssh/config <<EOF
+          Host messenger-deploy
+            HostName ${DEPLOY_HOST}
+            User ${DEPLOY_USER}
+            IdentityFile ~/.ssh/id_ed25519
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            HostKeyAlias ${DEPLOY_HOST}
+            ProxyCommand sh -c 'aws ssm start-session --target i-0cb0f7ee1bb1e08c8 --document-name AWS-StartSSHSession --parameters portNumber=22'
+          EOF
+
+          chmod 600 ~/.ssh/config
+
           image_prefix="ghcr.io/${REPOSITORY,,}"
           printf -v remote_path '%q' "$DEPLOY_PATH"
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" "cd $remote_path && git fetch origin main && git checkout --detach $REVISION && export BACKEND_IMAGE=$image_prefix-backend:$REVISION FRONTEND_IMAGE=$image_prefix-web:$REVISION && docker compose --env-file .env.production -f compose.aws.yml pull && docker compose --env-file .env.production -f compose.aws.yml stop backend && docker compose --env-file .env.production -f compose.aws.yml run --rm migrate && docker compose --env-file .env.production -f compose.aws.yml run --rm --no-deps backend npm run media:migrate && docker compose --env-file .env.production -f compose.aws.yml up -d --wait"
+
+          ssh -o ConnectTimeout=30 messenger-deploy \
+            "cd $remote_path && \
+             git fetch origin main && \
+             git checkout --detach $REVISION && \
+             export BACKEND_IMAGE=$image_prefix-backend:$REVISION \
+                    FRONTEND_IMAGE=$image_prefix-web:$REVISION && \
+             docker compose --env-file .env.production -f compose.aws.yml pull && \
+             docker compose --env-file .env.production -f compose.aws.yml stop backend && \
+             docker compose --env-file .env.production -f compose.aws.yml run --rm migrate && \
+             docker compose --env-file .env.production -f compose.aws.yml run --rm --no-deps backend npm run media:migrate && \
+             docker compose --env-file .env.production -f compose.aws.yml up -d --wait"
