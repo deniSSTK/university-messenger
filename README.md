@@ -76,6 +76,8 @@ The following sections describe the implemented application scope; see Deploymen
 
 Image and file sharing is implemented with a 5 MiB limit per file. Binary content is stored in a private S3 bucket. PostgreSQL stores object keys, names, MIME types and sizes; back up both the database and the bucket. Downloads require an active session and chat membership; deleted messages cannot be downloaded. Files download as attachments rather than executing or rendering active content in the app.
 
+A private chat’s profile opens from the participant’s name. Its shared media counts and cursor-paginated lists include available photos, videos, files, audio, and GIFs across the full conversation. The Delete user action hides only the signed-in member’s entry from their chat list. Finding the other participant through search restores the same conversation and its history.
+
 The core version includes direct conversations only. Group chats, channels, calls, bots, reactions, push notifications, and end-to-end encryption are outside the project scope.
 
 ## Technology and Architecture

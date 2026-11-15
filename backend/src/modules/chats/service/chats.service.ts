@@ -325,6 +325,18 @@ class ChatsService {
     });
   }
 
+  async hideChat(chatId: string, userId: string): Promise<void> {
+    if (!(await this.chatsRepository.hideChat(chatId, userId))) {
+      throw new ChatNotFoundError();
+    }
+
+    this.events.publish({ type: WebSocketEventType.Changed, chatId });
+  }
+
+  countMedia(chatId: string) {
+    return this.messagesRepository.countMedia(chatId);
+  }
+
   async listMessages(
     input: ListChatMessagesInput,
   ): Promise<ListChatMessagesResult> {
@@ -332,6 +344,7 @@ class ChatsService {
       chatId: input.chatId,
       cursor: decodeCursor(input.cursor),
       take: input.limit,
+      ...(input.mediaCategory ? { category: input.mediaCategory } : {}),
     });
     const lastMessage = result.items.at(-1);
     const nextCursor =

@@ -11,6 +11,8 @@ import type {
   ChatRecord,
   ChatPageRecord,
   HistoryRecord,
+  MediaCategoryRecord,
+  MediaCountsRecord,
 } from '../chats.repository';
 import type {
   ChatPersonHttpResponse,
@@ -20,6 +22,7 @@ import type {
   ChatHistoryHttpResponse,
   CreateChatHttpRequest,
   SendMessageHttpRequest,
+  SharedMediaHttpResponse,
 } from './chats-http.types';
 
 function mapPerson(person: ChatPersonHttpResponse): ChatPersonRecord {
@@ -112,14 +115,60 @@ class ChatsHttpAdapter implements ChatsRepository {
   }
 
   history(chatId: string, before: string | null, limit: number): Promise<HistoryRecord> {
+    return this.fetchHistory(chatId, before, limit);
+  }
+
+  media(
+    chatId: string,
+    category: MediaCategoryRecord,
+    cursor: string | null,
+    limit: number,
+  ): Promise<HistoryRecord> {
+    return this.fetchHistory(chatId, cursor, limit, category);
+  }
+
+  mediaCounts(chatId: string): Promise<MediaCountsRecord> {
+    return this.translateErrors(async () => {
+      const counts = await firstValueFrom(
+        this.http.get<SharedMediaHttpResponse>(`${this.chatUrl(chatId)}/media`),
+      );
+
+      return {
+        photos: counts.photos,
+        videos: counts.videos,
+        files: counts.files,
+        audio: counts.audio,
+        gifs: counts.gifs,
+      };
+    });
+  }
+
+  hide(chatId: string): Promise<void> {
+    return this.translateErrors(async () => {
+      await firstValueFrom(this.http.delete(`${this.chatUrl(chatId)}/visibility`));
+    });
+  }
+
+  private fetchHistory(
+    chatId: string,
+    before: string | null,
+    limit: number,
+    category?: MediaCategoryRecord,
+  ): Promise<HistoryRecord> {
     return this.translateErrors(async () => {
       const response = await firstValueFrom(
         this.http.get<ChatHistoryHttpResponse>(`${this.chatUrl(chatId)}/messages`, {
-          params: { limit, ...(before !== null ? { cursor: before } : {}) },
+          params: {
+            limit,
+            ...(before !== null ? { cursor: before } : {}),
+            ...(category ? { category } : {}),
+          },
         }),
       );
+      const messages = response.items.map(mapMessage);
+
       return {
-        messages: response.items.map(mapMessage).reverse(),
+        messages: category ? messages : messages.reverse(),
         nextBefore: response.nextCursor,
       };
     });

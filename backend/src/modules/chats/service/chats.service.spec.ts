@@ -24,6 +24,7 @@ describe('ChatsService', () => {
       findChat: jest.fn(),
       findChats: jest.fn(),
       isActiveMember: jest.fn(),
+      hideChat: jest.fn(),
     };
     messagesRepository = {
       findAttachment: jest.fn(),
@@ -31,6 +32,7 @@ describe('ChatsService', () => {
       markRead: jest.fn(),
       sendMessage: jest.fn(),
       findMessages: jest.fn(),
+      countMedia: jest.fn(),
     };
     service = new ChatsService(chatsRepository, messagesRepository);
   });

@@ -284,14 +284,29 @@
   gap: 3px;
   min-width: 0;
 }
+.open-peer-profile {
+  justify-self: start;
+  max-width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: start;
+}
+.open-peer-profile:hover {
+  color: var(--chat-accent);
+}
 .peer strong,
+.open-peer-profile,
 .peer span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   user-select: none;
 }
-.peer strong {
+.peer strong,
+.open-peer-profile {
   font-size: 16px;
   font-weight: 600;
 }

@@ -806,6 +806,143 @@ describeDatabase('Chats API (PostgreSQL)', () => {
       .expect({ name: 'old.txt', mediaType: 'text/plain', content: 'QUJD' });
   });
 
+  it('counts and paginates only visible shared attachments for a chat member', async () => {
+    const alice = await register('alice');
+    const bob = await register('bob');
+    const outsider = await register('outsider');
+    const api = request(app.getHttpServer());
+    const chat = responseBody<ChatResponse>(
+      await api
+        .post('/chats')
+        .set('Authorization', `Bearer ${alice.accessToken}`)
+        .send({ recipientId: bob.user.id })
+        .expect(201),
+    );
+    const send = async (name: string, mediaType: string) =>
+      responseBody<MessageResponse>(
+        await api
+          .post(`/chats/${chat.id}/attachments`)
+          .set('Authorization', `Bearer ${alice.accessToken}`)
+          .send({ name, mediaType, content: 'SGVsbG8=' })
+          .expect(201),
+      );
+    const first = await send('one.png', 'image/png');
+    const second = await send('two.jpg', 'IMAGE/JPEG');
+    const deleted = await send('deleted.png', 'image/png');
+    await send('clip.mp4', 'video/mp4');
+    await send('track.ogg', 'audio/ogg');
+    await send('animation.gif', 'image/gif');
+    const textFile = await send('notes.txt', 'text/plain');
+    const legacy = await send('legacy.dat', 'application/octet-stream');
+    await prisma.message.update({
+      where: { id: legacy.id },
+      data: { fileType: null },
+    });
+    await api
+      .delete(`/chats/${chat.id}/messages/${deleted.id}`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .expect(204);
+
+    const base = `/chats/${chat.id}`;
+    await api
+      .get(`${base}/media`)
+      .set('Authorization', `Bearer ${bob.accessToken}`)
+      .expect(200, { photos: 2, videos: 1, audio: 1, files: 2, gifs: 1 });
+    await api
+      .get(`${base}/media`)
+      .set('Authorization', `Bearer ${outsider.accessToken}`)
+      .expect(404);
+    await api
+      .get(`${base}/messages?category=photos`)
+      .set('Authorization', `Bearer ${outsider.accessToken}`)
+      .expect(404);
+    await api
+      .get(`${base}/messages?category=gifts`)
+      .set('Authorization', `Bearer ${bob.accessToken}`)
+      .expect(400);
+
+    const page = async (category: string, limit: number, cursor?: string) =>
+      responseBody<MessageHistoryResponse>(
+        await api
+          .get(`${base}/messages`)
+          .set('Authorization', `Bearer ${bob.accessToken}`)
+          .query({ category, limit, ...(cursor ? { cursor } : {}) })
+          .expect(200),
+      );
+    const newest = await page('photos', 1);
+    expect(newest.items.map(({ id }) => id)).toEqual([second.id]);
+    expect(newest.nextCursor).not.toBeNull();
+    expect(
+      (await page('photos', 1, newest.nextCursor!)).items.map(({ id }) => id),
+    ).toEqual([first.id]);
+    expect((await page('files', 10)).items.map(({ id }) => id)).toEqual([
+      legacy.id,
+      textFile.id,
+    ]);
+  });
+
+  it('hides a chat only for its requesting member and restores the same history on reopen', async () => {
+    const alice = await register('alice');
+    const bob = await register('bob');
+    const outsider = await register('outsider');
+    const api = request(app.getHttpServer());
+    const open = async (token: string, recipientId: string) =>
+      responseBody<ChatResponse>(
+        await api
+          .post('/chats')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ recipientId })
+          .expect(201),
+      );
+    const chat = await open(alice.accessToken, bob.user.id);
+    const base = `/chats/${chat.id}`;
+    await api
+      .post(`${base}/messages`)
+      .set('Authorization', `Bearer ${bob.accessToken}`)
+      .send({ text: 'Історія залишається' })
+      .expect(201);
+    await api
+      .delete(`${base}/visibility`)
+      .set('Authorization', `Bearer ${outsider.accessToken}`)
+      .expect(404);
+    await api
+      .delete(`${base}/visibility`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .expect(204);
+    await api
+      .delete(`${base}/visibility`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .expect(204);
+    const list = async (token: string) =>
+      responseBody<ChatListResponse>(
+        await api
+          .get('/chats')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200),
+      );
+    expect((await list(alice.accessToken)).items).toEqual([]);
+    expect((await list(bob.accessToken)).items.map(({ id }) => id)).toEqual([
+      chat.id,
+    ]);
+    expect((await open(alice.accessToken, bob.user.id)).id).toBe(chat.id);
+    expect((await list(alice.accessToken)).items.map(({ id }) => id)).toEqual([
+      chat.id,
+    ]);
+    const history = await api
+      .get(`${base}/messages`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .expect(200);
+    expect(
+      responseBody<MessageHistoryResponse>(history).items.map(
+        ({ text }) => text,
+      ),
+    ).toEqual(['Історія залишається']);
+    await api
+      .get('/auth/me')
+      .set('Authorization', `Bearer ${bob.accessToken}`)
+      .expect(200);
+  });
+
   it('delivers authorized WebSocket changes and typing events and rejects a revoked session', async () => {
     const alice = await register('alice');
     const bob = await register('bob');

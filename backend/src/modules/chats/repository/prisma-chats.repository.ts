@@ -16,6 +16,38 @@ import type {
   AttachmentData,
 } from '../domain/chats.repository.js';
 
+import {
+  GIF_TYPE,
+  PHOTO_TYPES,
+  mediaCategory,
+} from '../domain/shared-media.js';
+import type { MediaCategory, MediaCounts } from '../domain/shared-media.js';
+
+const sharedAttachment: Prisma.MessageWhereInput = {
+  deletedAt: null,
+  fileName: { not: null },
+  OR: [{ fileKey: { not: null } }, { fileData: { not: null } }],
+};
+const photos: Prisma.MessageWhereInput = {
+  fileType: { in: PHOTO_TYPES, mode: 'insensitive' },
+};
+const gifs: Prisma.MessageWhereInput = {
+  fileType: { equals: GIF_TYPE, mode: 'insensitive' },
+};
+const videos: Prisma.MessageWhereInput = {
+  fileType: { startsWith: 'video/', mode: 'insensitive' },
+};
+const audio: Prisma.MessageWhereInput = {
+  fileType: { startsWith: 'audio/', mode: 'insensitive' },
+};
+const mediaFilters: Record<MediaCategory, Prisma.MessageWhereInput> = {
+  photos,
+  gifs,
+  videos,
+  audio,
+  files: { OR: [{ fileType: null }, { NOT: [photos, gifs, videos, audio] }] },
+};
+
 const participantSelect = {
   id: true,
   username: true,
@@ -138,6 +170,16 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
             return null;
           }
 
+          await transaction.chatMember.updateMany({
+            where: {
+              chatId: existingChat.id,
+              userId: currentUserId,
+              deletedAt: null,
+              hiddenAt: { not: null },
+            },
+            data: { hiddenAt: null },
+          });
+
           return mapPrivateChat(existingChat);
         }
 
@@ -186,6 +228,7 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
             WHERE chat."deletedAt" IS NULL
               AND membership."userId" = ${currentUserId}::uuid
               AND membership."deletedAt" IS NULL
+              AND membership."hiddenAt" IS NULL
               AND EXISTS (
                 SELECT 1
                 FROM "ChatMember" AS other
@@ -269,6 +312,15 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
+  }
+
+  async hideChat(chatId: string, userId: string): Promise<boolean> {
+    const result = await this.prisma.chatMember.updateMany({
+      where: { chatId, userId, deletedAt: null, chat: { deletedAt: null } },
+      data: { hiddenAt: new Date() },
+    });
+
+    return result.count > 0;
   }
 
   async isActiveMember(chatId: string, userId: string): Promise<boolean> {
@@ -438,6 +490,27 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
     });
   }
 
+  async countMedia(chatId: string): Promise<MediaCounts> {
+    const rows = await this.prisma.message.groupBy({
+      by: ['fileType'],
+      where: { chatId, ...sharedAttachment },
+      _count: { _all: true },
+    });
+    const counts: MediaCounts = {
+      photos: 0,
+      videos: 0,
+      files: 0,
+      audio: 0,
+      gifs: 0,
+    };
+
+    for (const row of rows) {
+      counts[mediaCategory(row.fileType)] += row._count._all;
+    }
+
+    return counts;
+  }
+
   async findMessages(input: FindMessagesInput): Promise<FindMessagesResult> {
     const cursorFilter = input.cursor
       ? {
@@ -456,6 +529,9 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
         chatId: input.chatId,
         deletedAt: null,
         ...cursorFilter,
+        ...(input.category
+          ? { AND: [sharedAttachment, mediaFilters[input.category]] }
+          : {}),
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: input.take + 1,

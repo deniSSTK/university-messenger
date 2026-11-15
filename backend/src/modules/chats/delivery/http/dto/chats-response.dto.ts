@@ -124,7 +124,25 @@ class ListMessagesResponseDto {
   nextCursor!: string | null;
 }
 
+class SharedMediaCountsDto {
+  @ApiProperty({ example: CHATS_EXAMPLES.mediaCounts.photos })
+  photos!: number;
+
+  @ApiProperty({ example: CHATS_EXAMPLES.mediaCounts.videos })
+  videos!: number;
+
+  @ApiProperty({ example: CHATS_EXAMPLES.mediaCounts.files })
+  files!: number;
+
+  @ApiProperty({ example: CHATS_EXAMPLES.mediaCounts.audio })
+  audio!: number;
+
+  @ApiProperty({ example: CHATS_EXAMPLES.mediaCounts.gifs })
+  gifs!: number;
+}
+
 export {
+  SharedMediaCountsDto,
   ChatListItemDto,
   ChatDetailsResponseDto,
   ChatMessageDto,

@@ -41,7 +41,12 @@ type ChatActivity = {
 };
 type ChatFile = { name: string; mediaType: string; bytes: Uint8Array };
 
+type SharedMediaCategory = 'photos' | 'videos' | 'files' | 'audio' | 'gifs';
+type SharedMediaCounts = Record<SharedMediaCategory, number>;
+
 export type {
+  SharedMediaCategory,
+  SharedMediaCounts,
   ChatPerson,
   ChatMessage,
   Conversation,

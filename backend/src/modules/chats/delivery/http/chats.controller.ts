@@ -60,6 +60,7 @@ import {
   ListChatsResponseDto,
   ListMessagesResponseDto,
   SendMessageResponseDto,
+  SharedMediaCountsDto,
 } from './dto/chats-response.dto.js';
 import { ListChatsRequestDto } from './dto/list-chats-request.dto.js';
 import { ListMessagesRequestDto } from './dto/list-messages-request.dto.js';
@@ -188,6 +189,34 @@ class ChatsController {
         totalPages: result.totalPages,
       },
     };
+  }
+
+  @Get(':chatId/media')
+  @UseGuards(ChatMemberGuard)
+  @ApiOperation({
+    summary: 'Count available attachments in this chat by category',
+  })
+  @ApiOkResponse({ type: SharedMediaCountsDto })
+  @ApiBadRequestResponse({ description: 'Invalid chat ID.' })
+  @ApiUnauthorizedResponse({ description: 'Inactive session.' })
+  @ApiNotFoundResponse({ description: 'Chat not found.' })
+  countMedia(@Param() params: ChatIdParamsDto): Promise<SharedMediaCountsDto> {
+    return this.chats.countMedia(params.chatId);
+  }
+
+  @Delete(':chatId/visibility')
+  @HttpCode(204)
+  @UseGuards(ChatMemberGuard)
+  @ApiOperation({ summary: 'Hide only the current user’s chat list entry' })
+  @ApiNoContentResponse()
+  @ApiBadRequestResponse({ description: 'Invalid chat ID.' })
+  @ApiUnauthorizedResponse({ description: 'Inactive session.' })
+  @ApiNotFoundResponse({ description: 'Chat not found.' })
+  hideChat(
+    @Param() params: ChatIdParamsDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<void> {
+    return this.chats.hideChat(params.chatId, request.auth.user.id);
   }
 
   @Post(':chatId/messages')
@@ -376,6 +405,7 @@ class ChatsController {
     return this.chats.listMessages({
       chatId: params.chatId,
       cursor: query.cursor,
+      ...(query.category ? { mediaCategory: query.category } : {}),
       limit: query.limit,
     });
   }

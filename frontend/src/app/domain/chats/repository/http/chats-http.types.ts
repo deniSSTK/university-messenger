@@ -41,7 +41,16 @@ interface SendMessageHttpRequest {
   text: string;
 }
 
+type SharedMediaHttpResponse = {
+  photos: number;
+  videos: number;
+  files: number;
+  audio: number;
+  gifs: number;
+};
+
 export type {
+  SharedMediaHttpResponse,
   ChatPersonHttpResponse,
   ChatMessageHttpResponse,
   ChatDetailsHttpResponse,

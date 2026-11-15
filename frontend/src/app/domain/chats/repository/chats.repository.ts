@@ -35,12 +35,23 @@ class ChatRepositoryError extends Error {
     super(code);
   }
 }
+type MediaCategoryRecord = 'photos' | 'videos' | 'files' | 'audio' | 'gifs';
+type MediaCountsRecord = Record<MediaCategoryRecord, number>;
+
 interface ChatsRepository {
   viewer(): Promise<ChatPersonRecord>;
   list(page: number, limit: number): Promise<ChatPageRecord>;
   open(person: ChatPersonRecord): Promise<ChatRecord>;
   get(chatId: string): Promise<ChatRecord>;
   history(chatId: string, before: string | null, limit: number): Promise<HistoryRecord>;
+  mediaCounts(chatId: string): Promise<MediaCountsRecord>;
+  media(
+    chatId: string,
+    category: MediaCategoryRecord,
+    cursor: string | null,
+    limit: number,
+  ): Promise<HistoryRecord>;
+  hide(chatId: string): Promise<void>;
   send(chatId: string, text: string): Promise<ChatMessageRecord>;
 }
 const CHATS_REPOSITORY = new InjectionToken<ChatsRepository>('CHATS_REPOSITORY');
@@ -53,5 +64,7 @@ export type {
   ChatRecord,
   ChatPageRecord,
   HistoryRecord,
+  MediaCategoryRecord,
+  MediaCountsRecord,
   ChatRepositoryErrorCode,
 };
