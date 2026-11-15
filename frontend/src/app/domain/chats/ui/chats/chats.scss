@@ -392,6 +392,18 @@
   min-height: 54px;
   padding: 5px 0;
 }
+.composer app-voice-composer {
+  order: 1;
+  flex: 0 0 44px;
+}
+.composer app-voice-composer.composer-hidden,
+.composer.voice-active > :not(app-voice-composer) {
+  display: none;
+}
+.composer.voice-active app-voice-composer {
+  display: block;
+  flex: 1;
+}
 .composer textarea {
   flex: 1;
   width: 0;

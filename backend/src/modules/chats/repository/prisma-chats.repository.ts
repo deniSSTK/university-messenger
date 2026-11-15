@@ -12,6 +12,8 @@ import type {
   FindMessagesInput,
   FindMessagesResult,
   SendMessageInput,
+  SendVoiceMessageInput,
+  SaveMessageResult,
   ChangeMessageInput,
   AttachmentData,
 } from '../domain/chats.repository.js';
@@ -31,8 +33,11 @@ const messageSelect = {
   senderId: true,
   createdAt: true,
   editedAt: true,
+  deletedAt: true,
   readAt: true,
   fileName: true,
+  voiceDurationMs: true,
+  voiceWaveform: true,
   fileType: true,
   fileSize: true,
   sender: { select: participantSelect },
@@ -75,6 +80,14 @@ function mapMessage(
     readAt: message.readAt,
     attachment: message.fileName
       ? {
+          ...(message.voiceDurationMs === null
+            ? {}
+            : {
+                voice: {
+                  durationMs: message.voiceDurationMs,
+                  waveform: message.voiceWaveform,
+                },
+              }),
           name: message.fileName,
           mediaType: message.fileType ?? 'application/octet-stream',
           size: message.fileSize ?? 0,
@@ -287,6 +300,17 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
   }
 
   async sendMessage(input: SendMessageInput): Promise<ChatMessage> {
+    return (await this.persistMessage(input)).message;
+  }
+
+  sendVoiceMessage(input: SendVoiceMessageInput): Promise<SaveMessageResult> {
+    return this.persistMessage(input, input);
+  }
+
+  private persistMessage(
+    input: SendMessageInput,
+    voice?: SendVoiceMessageInput,
+  ): Promise<SaveMessageResult> {
     return this.prisma.$transaction(async (transaction) => {
       const [membership] = await transaction.$queryRaw<{ id: string }[]>`
         SELECT chat."id"
@@ -301,6 +325,27 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
 
       if (!membership) {
         throw new ChatNotFoundError();
+      }
+
+      if (voice) {
+        const existing = await transaction.message.findUnique({
+          where: {
+            chatId_senderId_voiceRequestId: {
+              chatId: input.chatId,
+              senderId: input.senderId,
+              voiceRequestId: voice.id,
+            },
+          },
+          select: messageSelect,
+        });
+
+        if (existing) {
+          if (existing.deletedAt) {
+            throw new ChatNotFoundError();
+          }
+
+          return { message: mapMessage(existing), created: false };
+        }
       }
 
       // A later send must sort ahead of the previous message even within one millisecond.
@@ -334,6 +379,13 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
                 fileKey: input.file.key,
               }
             : {}),
+          ...(voice
+            ? {
+                voiceRequestId: voice.id,
+                voiceDurationMs: voice.voice.durationMs,
+                voiceWaveform: voice.voice.waveform,
+              }
+            : {}),
           createdAt: activity.activityAt,
         },
         select: messageSelect,
@@ -344,7 +396,7 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
         data: { updatedAt: activity.activityAt },
       });
 
-      return mapMessage(message);
+      return { message: mapMessage(message), created: true };
     });
   }
 

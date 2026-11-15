@@ -6,6 +6,8 @@ type ChatParticipant = {
   avatarKey?: string | null;
 };
 
+type VoiceMetadata = { durationMs: number; waveform: number[] };
+
 type ChatMessage = {
   id: string;
   chatId: string;
@@ -13,7 +15,12 @@ type ChatMessage = {
   senderId: string;
   sender: ChatParticipant;
   createdAt: Date;
-  attachment?: { name: string; mediaType: string; size: number } | null;
+  attachment?: {
+    name: string;
+    mediaType: string;
+    size: number;
+    voice?: VoiceMetadata;
+  } | null;
   editedAt: Date | null;
   readAt?: Date | null;
 };
@@ -43,4 +50,5 @@ export type {
   ChatParticipant,
   MessageCursor,
   PrivateChat,
+  VoiceMetadata,
 };

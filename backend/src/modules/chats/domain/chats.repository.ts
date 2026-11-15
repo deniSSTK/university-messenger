@@ -3,6 +3,7 @@ import type {
   ChatMessage,
   MessageCursor,
   PrivateChat,
+  VoiceMetadata,
 } from './chats.models.js';
 
 type CreatePrivateChatInput = {
@@ -21,12 +22,26 @@ type FindChatsResult = {
   total: number;
 };
 
+type MessageFile = {
+  name: string;
+  mediaType: string;
+  size: number;
+  key: string;
+};
+
 type SendMessageInput = {
   chatId: string;
   senderId: string;
   text: string;
-  file?: { name: string; mediaType: string; size: number; key: string };
+  file?: MessageFile;
 };
+
+type SendVoiceMessageInput = SendMessageInput & {
+  id: string;
+  file: MessageFile;
+  voice: VoiceMetadata;
+};
+type SaveMessageResult = { message: ChatMessage; created: boolean };
 
 type FindMessagesInput = {
   chatId: string;
@@ -73,6 +88,7 @@ interface IMessagesRepository {
     throughMessageId: string,
   ): Promise<boolean>;
   sendMessage(input: SendMessageInput): Promise<ChatMessage>;
+  sendVoiceMessage(input: SendVoiceMessageInput): Promise<SaveMessageResult>;
   findMessages(input: FindMessagesInput): Promise<FindMessagesResult>;
 }
 
@@ -91,4 +107,6 @@ export type {
   IChatsRepository,
   IMessagesRepository,
   SendMessageInput,
+  SendVoiceMessageInput,
+  SaveMessageResult,
 };

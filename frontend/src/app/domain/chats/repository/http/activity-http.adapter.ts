@@ -5,6 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { HttpClient } from '../../../../core/http/http-client.service';
 import { SessionService } from '../../../../core/http/session.service';
 import { environment } from '../../../../../environments/environment';
+import { encodeBase64 } from './file-content';
 import { ChatRepositoryError } from '../chats.repository';
 import type { ActivityRepository, ActivityRecord, FileRecord } from '../activity.repository';
 
@@ -122,15 +123,11 @@ class ActivityHttpAdapter implements ActivityRepository {
 
   upload(chatId: string, file: FileRecord): Promise<void> {
     return this.run(async () => {
-      let binary = '';
-      for (const byte of file.bytes) {
-        binary += String.fromCharCode(byte);
-      }
       await firstValueFrom(
         this.http.post(`${environment.apiUrl}/chats/${encodeURIComponent(chatId)}/attachments`, {
           name: file.name,
           mediaType: file.mediaType,
-          content: btoa(binary),
+          content: encodeBase64(file.bytes),
         }),
       );
     });

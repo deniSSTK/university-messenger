@@ -53,6 +53,8 @@ type SendFileInput = {
   mediaType: string;
   bytes: Uint8Array;
 };
+type SendVoiceInput = Omit<SendFileInput, 'name'> & { id: string };
+
 type FileResult = { name: string; mediaType: string; bytes: Uint8Array };
 type ChangeChatMessageInput = {
   chatId: string;
@@ -70,6 +72,7 @@ export type {
   ListChatsResult,
   SendChatMessageInput,
   SendFileInput,
+  SendVoiceInput,
   FileResult,
   ChangeChatMessageInput,
 };

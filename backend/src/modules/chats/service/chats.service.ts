@@ -5,7 +5,12 @@ import { MediaUnavailableError } from '../../media/domain/object-storage.port.js
 import { avatarUrl } from '../../../common/utils/avatar-url.js';
 import type { ChatParticipant } from '../domain/chats.models.js';
 import type { ChangeChatMessageInput } from './chats.types.js';
-import type { SendFileInput, FileResult } from './chats.types.js';
+import type { VoiceAudio } from '../domain/voice-audio.port.js';
+import type {
+  SendFileInput,
+  SendVoiceInput,
+  FileResult,
+} from './chats.types.js';
 import type { ChatEventsPort } from '../domain/chat-events.port.js';
 import {
   CannotCreateChatWithSelfError,
@@ -13,11 +18,13 @@ import {
   ChatParticipantNotFoundError,
   InvalidMessageCursorError,
   InvalidMessageTextError,
+  InvalidVoiceAudioError,
 } from '../domain/chats.errors.js';
 import { MESSAGE_TEXT_MAX_LENGTH } from '../domain/chats.constants.js';
 import type {
   IChatsRepository,
   IMessagesRepository,
+  SaveMessageResult,
 } from '../domain/chats.repository.js';
 import type { ChatMessage, MessageCursor } from '../domain/chats.models.js';
 import type {
@@ -89,6 +96,7 @@ class ChatsService {
     private readonly messagesRepository: IMessagesRepository,
     private readonly events: ChatEventsPort = { publish: () => {} },
     private readonly storage?: ObjectStorage,
+    private readonly voiceAudio?: VoiceAudio,
   ) {}
 
   async createChat(input: CreateChatInput): Promise<ChatDetailsResult> {
@@ -193,41 +201,93 @@ class ChatsService {
       throw new ChatNotFoundError();
     }
 
-    if (!this.storage) {
+    return this.storeAttachment(
+      input.chatId,
+      input.mediaType,
+      input.bytes,
+      async (key) => ({
+        message: await this.messagesRepository.sendMessage({
+          chatId: input.chatId,
+          senderId: input.senderId,
+          text: name,
+          file: {
+            name,
+            mediaType: input.mediaType,
+            size: input.bytes.length,
+            key,
+          },
+        }),
+        created: true,
+      }),
+    );
+  }
+
+  async sendVoice(input: SendVoiceInput): Promise<ChatMessage> {
+    if (!(await this.isActiveMember(input.chatId, input.senderId))) {
+      throw new ChatNotFoundError();
+    }
+
+    if (input.bytes.length < 1 || input.bytes.length > 5242880) {
+      throw new InvalidVoiceAudioError();
+    }
+
+    if (!this.storage || !this.voiceAudio) {
       throw new MediaUnavailableError();
     }
 
-    const key = `attachments/${input.chatId}/${randomUUID()}`;
-    await this.storage.put({
-      key,
-      bytes: input.bytes,
-      mediaType: input.mediaType,
-    });
-    let message: ChatMessage;
+    const audio = await this.voiceAudio.prepare(input.bytes, input.mediaType);
+
+    return this.storeAttachment(
+      input.chatId,
+      audio.mediaType,
+      audio.bytes,
+      (key) =>
+        this.messagesRepository.sendVoiceMessage({
+          id: input.id,
+          chatId: input.chatId,
+          senderId: input.senderId,
+          text: 'Голосове повідомлення',
+          file: {
+            key,
+            name: `voice.${audio.extension}`,
+            mediaType: audio.mediaType,
+            size: audio.bytes.length,
+          },
+          voice: { durationMs: audio.durationMs, waveform: audio.waveform },
+        }),
+    );
+  }
+
+  private async storeAttachment(
+    chatId: string,
+    mediaType: string,
+    bytes: Uint8Array,
+    persist: (key: string) => Promise<SaveMessageResult>,
+  ): Promise<ChatMessage> {
+    const storage = this.storage;
+
+    if (!storage) {
+      throw new MediaUnavailableError();
+    }
+
+    const key = `attachments/${chatId}/${randomUUID()}`;
+    let result: SaveMessageResult;
 
     try {
-      message = await this.messagesRepository.sendMessage({
-        chatId: input.chatId,
-        senderId: input.senderId,
-        text: name,
-        file: {
-          name,
-          mediaType: input.mediaType,
-          size: input.bytes.length,
-          key,
-        },
-      });
+      await storage.put({ key, bytes, mediaType });
+      result = await persist(key);
     } catch (error: unknown) {
-      await this.storage.remove(key).catch(() => undefined);
+      await storage.remove(key).catch(() => undefined);
       throw error;
     }
 
-    this.events.publish({
-      type: WebSocketEventType.Changed,
-      chatId: input.chatId,
-    });
+    if (result.created) {
+      this.events.publish({ type: WebSocketEventType.Changed, chatId });
+    } else {
+      await storage.remove(key).catch(() => undefined);
+    }
 
-    return this.presentMessage(message);
+    return this.presentMessage(result.message);
   }
 
   async getFile(

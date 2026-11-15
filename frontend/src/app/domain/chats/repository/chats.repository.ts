@@ -12,7 +12,12 @@ interface ChatMessageRecord {
   createdAt: string;
   editedAt?: string | null;
   readAt?: string | null;
-  attachment?: { name: string; mediaType: string; size: number } | null;
+  attachment?: {
+    name: string;
+    mediaType: string;
+    size: number;
+    voice?: { durationMs: number; waveform: number[] };
+  } | null;
 }
 interface ChatRecord {
   id: string;
@@ -35,6 +40,8 @@ class ChatRepositoryError extends Error {
     super(code);
   }
 }
+type VoiceRecordingRecord = { id: string; mediaType: string; bytes: Uint8Array };
+
 interface ChatsRepository {
   viewer(): Promise<ChatPersonRecord>;
   list(page: number, limit: number): Promise<ChatPageRecord>;
@@ -42,6 +49,7 @@ interface ChatsRepository {
   get(chatId: string): Promise<ChatRecord>;
   history(chatId: string, before: string | null, limit: number): Promise<HistoryRecord>;
   send(chatId: string, text: string): Promise<ChatMessageRecord>;
+  sendVoice(chatId: string, recording: VoiceRecordingRecord): Promise<ChatMessageRecord>;
 }
 const CHATS_REPOSITORY = new InjectionToken<ChatsRepository>('CHATS_REPOSITORY');
 
@@ -54,4 +62,5 @@ export type {
   ChatPageRecord,
   HistoryRecord,
   ChatRepositoryErrorCode,
+  VoiceRecordingRecord,
 };

@@ -6,6 +6,7 @@ import { OBJECT_STORAGE } from '../src/modules/media/domain/object-storage.port.
 import { MemoryObjectStorage } from './memory-object-storage.js';
 import { WebSocket } from 'ws';
 import { once } from 'node:events';
+import { execFileSync } from 'node:child_process';
 import { type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -73,6 +74,28 @@ type MessageHistoryResponse = {
   nextCursor: string | null;
 };
 
+function sampleVoice(duration = 1, container = 'webm'): string {
+  return execFileSync(
+    'ffmpeg',
+    [
+      '-nostdin',
+      '-v',
+      'error',
+      '-f',
+      'lavfi',
+      '-i',
+      `sine=frequency=440:duration=${duration}`,
+      '-c:a',
+      container === 'mp4' ? 'aac' : 'libopus',
+      ...(container === 'mp4' ? ['-movflags', 'frag_keyframe+empty_moov'] : []),
+      '-f',
+      container,
+      'pipe:1',
+    ],
+    { maxBuffer: 6_000_000 },
+  ).toString('base64');
+}
+
 function responseBody<T>(response: Response): T {
   return response.body as T;
 }
@@ -81,6 +104,7 @@ describeDatabase('Chats API (PostgreSQL)', () => {
   let app: INestApplication<App>;
   let pool: Pool;
   let prisma: PrismaClient;
+  const storage = new MemoryObjectStorage();
   const schema = `chats_test_${randomUUID().replaceAll('-', '')}`;
   const previousDatabase = {
     JWT_ACCESS_TOKEN_TTL: process.env.JWT_ACCESS_TOKEN_TTL,
@@ -138,7 +162,7 @@ describeDatabase('Chats API (PostgreSQL)', () => {
 
     const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(OBJECT_STORAGE)
-      .useValue(new MemoryObjectStorage())
+      .useValue(storage)
       .overrideProvider(PrismaService)
       .useValue(prisma)
       .compile();
@@ -806,6 +830,108 @@ describeDatabase('Chats API (PostgreSQL)', () => {
       .expect({ name: 'old.txt', mediaType: 'text/plain', content: 'QUJD' });
   });
 
+  it('validates voice content and duration, stores it privately and deduplicates concurrent retries', async () => {
+    const alice = await register('alice');
+    const bob = await register('bob');
+    const outsider = await register('outsider');
+    const chat = responseBody<ChatResponse>(
+      await request(app.getHttpServer())
+        .post('/chats')
+        .set('Authorization', `Bearer ${alice.accessToken}`)
+        .send({ recipientId: bob.user.id })
+        .expect(201),
+    );
+    const body = {
+      id: randomUUID(),
+      mediaType: 'audio/webm;codecs=opus',
+      content: sampleVoice(),
+    };
+    const upload = (token: string, payload = body) =>
+      request(app.getHttpServer())
+        .post(`/chats/${chat.id}/voice`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(payload);
+
+    await upload(outsider.accessToken).expect(404);
+    await upload(alice.accessToken, { ...body, content: 'SGVsbG8=' }).expect(
+      400,
+    );
+    await upload(alice.accessToken, { ...body, mediaType: 'audio/mp4' }).expect(
+      400,
+    );
+    await upload(alice.accessToken, {
+      ...body,
+      content: sampleVoice(301),
+    }).expect(400);
+    const before = storage.objects.size;
+
+    const uploads = await Promise.all([
+      upload(alice.accessToken).expect(201),
+      upload(alice.accessToken).expect(201),
+    ]);
+    const message = responseBody<
+      MessageResponse & {
+        attachment: {
+          name: string;
+          voice: { durationMs: number; waveform: number[] };
+        };
+      }
+    >(uploads[0]);
+    expect(responseBody<MessageResponse>(uploads[1]).id).toBe(message.id);
+    expect(message.attachment.name).toBe('voice.webm');
+    expect(message.attachment.voice.durationMs).toBeGreaterThanOrEqual(995);
+    expect(message.attachment.voice.waveform).toHaveLength(80);
+    expect(Math.max(...message.attachment.voice.waveform)).toBe(100);
+    expect(storage.objects.size).toBe(before + 1);
+    const stored = await prisma.message.findUniqueOrThrow({
+      where: { id: message.id },
+    });
+    expect(stored.fileData).toBeNull();
+    expect(storage.objects.has(stored.fileKey!)).toBe(true);
+    expect(await prisma.message.count({ where: { chatId: chat.id } })).toBe(1);
+    expect(message).not.toHaveProperty('fileKey');
+
+    const history = await request(app.getHttpServer())
+      .get(`/chats/${chat.id}/messages`)
+      .set('Authorization', `Bearer ${bob.accessToken}`)
+      .expect(200);
+    expect(
+      responseBody<MessageHistoryResponse>(history).items[0],
+    ).toMatchObject(message);
+    const url = `/chats/${chat.id}/messages/${message.id}`;
+    await request(app.getHttpServer())
+      .get(`${url}/attachment`)
+      .set('Authorization', `Bearer ${outsider.accessToken}`)
+      .expect(404);
+    const audio = await request(app.getHttpServer())
+      .get(`${url}/attachment`)
+      .set('Authorization', `Bearer ${bob.accessToken}`)
+      .expect(200);
+    expect(responseBody<{ content: string }>(audio).content).toBe(
+      Buffer.from(storage.objects.get(stored.fileKey!)!).toString('base64'),
+    );
+
+    await request(app.getHttpServer())
+      .delete(url)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .expect(204);
+    await request(app.getHttpServer())
+      .get(`${url}/attachment`)
+      .set('Authorization', `Bearer ${bob.accessToken}`)
+      .expect(404);
+    await upload(alice.accessToken).expect(404);
+    expect(storage.objects.size).toBe(before + 1);
+
+    const mp4 = await upload(alice.accessToken, {
+      id: randomUUID(),
+      mediaType: 'audio/mp4',
+      content: sampleVoice(1, 'mp4'),
+    }).expect(201);
+    expect(responseBody<{ attachment: unknown }>(mp4).attachment).toMatchObject(
+      { name: 'voice.m4a', mediaType: 'audio/mp4' },
+    );
+  }, 30_000);
+
   it('delivers authorized WebSocket changes and typing events and rejects a revoked session', async () => {
     const alice = await register('alice');
     const bob = await register('bob');
@@ -823,12 +949,13 @@ describeDatabase('Chats API (PostgreSQL)', () => {
     const next = (
       client: WebSocket,
       type: string,
+      timeoutMs = 3000,
     ): Promise<Record<string, unknown>> =>
       new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
           client.off('message', onMessage);
           reject(new Error(`No ${type} event`));
-        }, 3000);
+        }, timeoutMs);
         const onMessage = (bytes: Buffer) => {
           const event = JSON.parse(bytes.toString('utf8')) as Record<
             string,
@@ -871,6 +998,27 @@ describeDatabase('Chats API (PostgreSQL)', () => {
         .expect(201);
       expect(await changed).toMatchObject({ chatId: chat.id });
       expect(otherEvents).toEqual([]);
+      const voicePayload = {
+        id: randomUUID(),
+        mediaType: 'audio/webm',
+        content: sampleVoice(),
+      };
+      const [voiceChanged, voice] = await Promise.all([
+        next(recipient, 'changed', 15_000),
+        request(app.getHttpServer())
+          .post(`/chats/${chat.id}/voice`)
+          .set('Authorization', `Bearer ${alice.accessToken}`)
+          .send(voicePayload)
+          .expect(201),
+      ]);
+      expect(voiceChanged).toMatchObject({ chatId: chat.id });
+      expect(
+        await prisma.message.findUnique({
+          where: { id: responseBody<MessageResponse>(voice).id },
+        }),
+      ).toMatchObject({ chatId: chat.id });
+      expect(otherEvents).toEqual([]);
+
       const typing = next(author, 'typing');
       recipient.send(
         JSON.stringify({
@@ -902,7 +1050,7 @@ describeDatabase('Chats API (PostgreSQL)', () => {
         client.terminate();
       }
     }
-  });
+  }, 25_000);
 
   it('backfills the canonical pair without changing existing chats or messages', async () => {
     const legacySchema = `${schema}_legacy`;

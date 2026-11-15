@@ -76,6 +76,10 @@ The following sections describe the implemented application scope; see Deploymen
 
 Image and file sharing is implemented with a 5 MiB limit per file. Binary content is stored in a private S3 bucket. PostgreSQL stores object keys, names, MIME types and sizes; back up both the database and the bucket. Downloads require an active session and chat membership; deleted messages cannot be downloaded. Files download as attachments rather than executing or rendering active content in the app.
 
+Voice messages reuse private chat attachments and support recordings up to 5 MiB and five minutes. Hold the microphone in the empty composer, release to preview, then send. Drag left while holding to cancel. Open the chat in a second account to verify real-time delivery, then reload it to verify playback from history. The browser needs microphone permission and HTTPS or localhost.
+
+The backend needs `ffmpeg` and `ffprobe` on PATH for voice uploads and the related end-to-end tests. The backend Docker image includes both. They validate WebM/Opus, MP4/AAC and Ogg/Opus, derive duration and waveform from decoded audio, and remux the original compressed audio for seeking. Apply Prisma migrations before starting the updated API. Voice files use the same private S3 configuration as other attachments.
+
 The core version includes direct conversations only. Group chats, channels, calls, bots, reactions, push notifications, and end-to-end encryption are outside the project scope.
 
 ## Technology and Architecture

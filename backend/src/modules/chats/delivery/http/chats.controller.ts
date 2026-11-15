@@ -1,6 +1,7 @@
 import { ApiServiceUnavailableResponse } from '@nestjs/swagger';
 import {
   SendAttachmentDto,
+  SendVoiceDto,
   AttachmentResponseDto,
 } from './dto/attachment.dto.js';
 import { MessageParamsDto, ReadMessagesDto } from './dto/message-params.dto.js';
@@ -238,6 +239,27 @@ class ChatsController {
       chatId: params.chatId,
       senderId: request.auth.user.id,
       name: dto.name,
+      mediaType: dto.mediaType,
+      bytes: Buffer.from(dto.content, 'base64'),
+    });
+  }
+
+  @Post(':chatId/voice')
+  @UseGuards(ChatMemberGuard)
+  @ApiOperation({ summary: 'Send a voice recording up to 5 MiB and 5 minutes' })
+  @ApiCreatedResponse({ type: SendMessageResponseDto })
+  @ApiBadRequestResponse({ description: 'Invalid audio, format or duration.' })
+  @ApiNotFoundResponse({ description: 'Chat or message not found.' })
+  @ApiUnauthorizedResponse({ description: 'Inactive session.' })
+  async sendVoice(
+    @Param() params: ChatIdParamsDto,
+    @Body() dto: SendVoiceDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<SendMessageResponseDto> {
+    return this.chats.sendVoice({
+      id: dto.id.toLowerCase(),
+      chatId: params.chatId,
+      senderId: request.auth.user.id,
       mediaType: dto.mediaType,
       bytes: Buffer.from(dto.content, 'base64'),
     });

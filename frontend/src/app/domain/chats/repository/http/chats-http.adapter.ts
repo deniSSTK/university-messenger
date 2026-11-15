@@ -3,10 +3,12 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { HttpClient } from '../../../../core/http/http-client.service';
 import { environment } from '../../../../../environments/environment';
+import { encodeBase64 } from './file-content';
 import { ChatRepositoryError } from '../chats.repository';
 import type {
   ChatsRepository,
   ChatPersonRecord,
+  VoiceRecordingRecord,
   ChatMessageRecord,
   ChatRecord,
   ChatPageRecord,
@@ -20,6 +22,7 @@ import type {
   ChatHistoryHttpResponse,
   CreateChatHttpRequest,
   SendMessageHttpRequest,
+  SendVoiceHttpRequest,
 } from './chats-http.types';
 
 function mapPerson(person: ChatPersonHttpResponse): ChatPersonRecord {
@@ -45,6 +48,14 @@ function mapMessage(message: ChatMessageHttpResponse): ChatMessageRecord {
                 name: message.attachment.name,
                 mediaType: message.attachment.mediaType,
                 size: message.attachment.size,
+                ...(message.attachment.voice
+                  ? {
+                      voice: {
+                        durationMs: message.attachment.voice.durationMs,
+                        waveform: message.attachment.voice.waveform,
+                      },
+                    }
+                  : {}),
               }
             : null,
         }
@@ -130,6 +141,20 @@ class ChatsHttpAdapter implements ChatsRepository {
     return this.translateErrors(async () => {
       const response = await firstValueFrom(
         this.http.post<ChatMessageHttpResponse>(`${this.chatUrl(chatId)}/messages`, body),
+      );
+      return mapMessage(response);
+    });
+  }
+
+  sendVoice(chatId: string, recording: VoiceRecordingRecord): Promise<ChatMessageRecord> {
+    return this.translateErrors(async () => {
+      const body: SendVoiceHttpRequest = {
+        id: recording.id,
+        mediaType: recording.mediaType,
+        content: encodeBase64(recording.bytes),
+      };
+      const response = await firstValueFrom(
+        this.http.post<ChatMessageHttpResponse>(`${this.chatUrl(chatId)}/voice`, body),
       );
       return mapMessage(response);
     });

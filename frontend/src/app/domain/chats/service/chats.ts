@@ -1,8 +1,8 @@
 import { ACTIVITY_REPOSITORY } from '../repository/activity.repository';
-import type { ChatActivity, ChatFile } from './chats.types';
+import type { ChatActivity, ChatFile, VoiceRecordingInput } from './chats.types';
 import { Injectable, inject } from '@angular/core';
 import { countCodePoints } from '../../../core/text/unicode';
-import { MESSAGE_TEXT_MAX_LENGTH } from '../chats.constants';
+import { MESSAGE_TEXT_MAX_LENGTH, VOICE_MAX_BYTES } from '../chats.constants';
 import { CHATS_REPOSITORY, ChatRepositoryError } from '../repository/chats.repository';
 import type {
   ChatMessageRecord,
@@ -38,6 +38,14 @@ function mapMessage(message: ChatMessageRecord): ChatMessage {
                 name: message.attachment.name,
                 mediaType: message.attachment.mediaType,
                 size: message.attachment.size,
+                ...(message.attachment.voice
+                  ? {
+                      voice: {
+                        durationMs: message.attachment.voice.durationMs,
+                        waveform: message.attachment.voice.waveform,
+                      },
+                    }
+                  : {}),
               }
             : null,
         }
@@ -208,6 +216,22 @@ class ChatService {
 
     return this.run(async () => mapMessage(await this.repository.send(chatId, text)));
   }
+  sendVoice(chatId: string, recording: VoiceRecordingInput): Promise<ChatMessage> {
+    if (recording.bytes.length < 1 || recording.bytes.length > VOICE_MAX_BYTES) {
+      return Promise.reject(new ChatError('validation'));
+    }
+
+    return this.run(async () =>
+      mapMessage(
+        await this.repository.sendVoice(chatId, {
+          id: recording.id,
+          mediaType: recording.mediaType,
+          bytes: recording.bytes,
+        }),
+      ),
+    );
+  }
+
   private async run<T>(operation: () => Promise<T>): Promise<T> {
     try {
       return await operation();

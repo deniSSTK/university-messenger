@@ -11,7 +11,12 @@ interface MessageView {
   createdAt: string;
   editedAt?: string | null;
   readAt?: string | null;
-  attachment?: { name: string; mediaType: string; size: number } | null;
+  attachment?: {
+    name: string;
+    mediaType: string;
+    size: number;
+    voice?: { durationMs: number; waveform: number[] };
+  } | null;
 }
 interface ConversationView {
   id: string;

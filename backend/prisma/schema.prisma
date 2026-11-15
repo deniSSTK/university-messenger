@@ -69,23 +69,27 @@ model ChatMember {
 }
 
 model Message {
-  id        String    @id @default(uuid()) @db.Uuid
-  chatId    String    @db.Uuid
-  senderId  String    @db.Uuid
-  fileName  String?
-  fileType  String?
-  fileSize  Int?
-  fileData  Bytes?
-  fileKey   String?
-  text      String
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  editedAt  DateTime? @db.Timestamptz(3)
-  readAt    DateTime? @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  id              String    @id @default(uuid()) @db.Uuid
+  chatId          String    @db.Uuid
+  senderId        String    @db.Uuid
+  fileName        String?
+  fileType        String?
+  fileSize        Int?
+  fileData        Bytes?
+  fileKey         String?
+  voiceRequestId  String?   @db.Uuid
+  voiceDurationMs Int?
+  voiceWaveform   Int[]     @default([])
+  text            String
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  editedAt        DateTime? @db.Timestamptz(3)
+  readAt          DateTime? @db.Timestamptz(3)
+  deletedAt       DateTime? @db.Timestamptz(3)
 
   chat   Chat @relation(fields: [chatId], references: [id], onDelete: Restrict)
   sender User @relation(fields: [senderId], references: [id], onDelete: Restrict)
 
+  @@unique([chatId, senderId, voiceRequestId])
   @@index([chatId, createdAt, id])
   @@index([senderId])
 }

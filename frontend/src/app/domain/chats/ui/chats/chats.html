@@ -209,7 +209,11 @@
                       @if (last.senderId === viewer()?.id) {
                         <span class="sender-prefix">Ви: </span>
                       }
-                      <span class="preview-text">{{ last.attachment?.name ?? last.text }}</span>
+                      <span class="preview-text">{{
+                        last.attachment?.voice
+                          ? 'Голосове повідомлення'
+                          : (last.attachment?.name ?? last.text)
+                      }}</span>
                       @if (chat.unreadCount) {
                         <strong
                           class="unread-badge"
@@ -442,49 +446,68 @@
               </button>
             </div>
           }
-          <form class="composer" (submit)="$event.preventDefault(); send()">
-            <app-file-picker
-              label="Прикріпити файл до 5 МіБ"
-              [iconOnly]="true"
-              [disabled]="actionBusy()"
-              (fileSelected)="uploadFile($event)"
-            />
-            <label class="sr-only" for="message-text">Повідомлення</label
-            ><textarea
-              appInput
-              #composerInput
-              appearance="plain"
-              id="message-text"
-              rows="1"
-              placeholder="Написати повідомлення…"
-              [value]="draft()"
-              [disabled]="sending()"
-              [attr.aria-invalid]="draftTooLong()"
-              aria-describedby="message-help"
-              (input)="draftChanged(inputValue($event))"
-              (keydown)="composerKey($event)"
-            ></textarea
-            ><button
-              appButton
-              variant="primary"
-              type="submit"
-              class="send-button icon-button"
-              aria-label="Надіслати повідомлення"
-              [disabled]="!canSend()"
+          @for (chatId of [selectedId()!]; track chatId) {
+            <form
+              class="composer"
+              [class.voice-active]="voice.phase() !== 'idle'"
+              (submit)="$event.preventDefault(); voice.phase() === 'idle' && send()"
             >
+              <app-voice-composer
+                #voice
+                [chatId]="chatId"
+                [class.composer-hidden]="draft().length > 0 || sending() || !!editingId()"
+                [blocked]="actionBusy() || sending() || !!editingId()"
+                (sent)="voiceSent($event.chatId, $event.message)"
+              />
+              <app-file-picker
+                label="Прикріпити файл до 5 МіБ"
+                [iconOnly]="true"
+                [disabled]="actionBusy()"
+                (fileSelected)="uploadFile($event)"
+              />
+              <label class="sr-only" for="message-text">Повідомлення</label
+              ><textarea
+                appInput
+                #composerInput
+                appearance="plain"
+                id="message-text"
+                rows="1"
+                placeholder="Написати повідомлення…"
+                [value]="draft()"
+                [disabled]="sending()"
+                [attr.aria-invalid]="draftTooLong()"
+                aria-describedby="message-help"
+                (input)="draftChanged(inputValue($event))"
+                (keydown)="composerKey($event)"
+              ></textarea>
+              @if (draft() || sending()) {
+                <button
+                  appButton
+                  variant="primary"
+                  type="submit"
+                  class="send-button icon-button"
+                  aria-label="Надіслати повідомлення"
+                  [disabled]="!canSend()"
+                >
+                  @if (sending()) {
+                    <app-spinner />
+                  } @else {
+                    <app-icon-send />
+                  }
+                </button>
+              }
+              <span id="message-help" class="sr-only"
+                >Enter надсилає, Shift+Enter додає рядок. Максимум
+                {{ messageTextMaxLength }} символів.</span
+              >
               @if (sending()) {
-                <app-spinner />
-              } @else {
-                <app-icon-send />
-              }</button
-            ><span id="message-help" class="sr-only"
-              >Enter надсилає, Shift+Enter додає рядок. Максимум
-              {{ messageTextMaxLength }} символів.</span
-            >
-            @if (sending()) {
-              <span class="sr-only" role="status">Надсилаємо повідомлення…</span>
+                <span class="sr-only" role="status">Надсилаємо повідомлення…</span>
+              }
+            </form>
+            @if (voice.error()) {
+              <p role="alert" class="composer-error">{{ voice.error() }}</p>
             }
-          </form>
+          }
           @if (draftLength() > 3600) {
             <p class="character-count" [class.error]="draftTooLong()" role="status">
               {{ draftLength() }} / {{ messageTextMaxLength }}

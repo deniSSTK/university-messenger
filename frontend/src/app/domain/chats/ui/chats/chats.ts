@@ -33,6 +33,7 @@ import { MESSAGE_TEXT_MAX_LENGTH } from '../../chats.constants';
 import { ChatService, ChatError } from '../../service/chats';
 import type { ChatPerson, ChatMessage, Conversation } from '../../service/chats.types';
 import { ChatDrafts } from './chat-drafts';
+import { VoiceComposer } from './voice-composer';
 import { ChatBubble } from './chat-bubble';
 import { ChatAccountMenu } from './chat-account-menu';
 import type { PersonView, MessageView, ConversationView } from './chats-view.types';
@@ -60,6 +61,14 @@ function messageView(message: ChatMessage): MessageView {
                 name: message.attachment.name,
                 mediaType: message.attachment.mediaType,
                 size: message.attachment.size,
+                ...(message.attachment.voice
+                  ? {
+                      voice: {
+                        durationMs: message.attachment.voice.durationMs,
+                        waveform: message.attachment.voice.waveform,
+                      },
+                    }
+                  : {}),
               }
             : null,
         }
@@ -101,6 +110,7 @@ function mergeMessages(current: MessageView[], incoming: MessageView[]) {
     IconBack,
     IconSend,
     ChatBubble,
+    VoiceComposer,
     ChatAccountMenu,
     ChatProfileEditor,
   ],
@@ -769,6 +779,15 @@ class Chats {
     } finally {
       this.actionBusy.set(false);
     }
+  }
+
+  voiceSent(chatId: string, message: ChatMessage): void {
+    if (this.selectedId() === chatId) {
+      this.messages.update((current) => mergeMessages(current, [messageView(message)]));
+      this.afterRender(chatId, () => this.scrollToBottom());
+    }
+
+    this.queueLiveSync();
   }
 
   async uploadFile(event: Event) {
