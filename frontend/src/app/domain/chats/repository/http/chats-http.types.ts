@@ -48,8 +48,18 @@ interface SendMessageHttpRequest {
 
 type SendVoiceHttpRequest = { id: string; mediaType: string; content: string };
 
+type SharedMediaHttpResponse = {
+  photos: number;
+  videos: number;
+  files: number;
+  audio: number;
+  voice: number;
+  gifs: number;
+};
+
 export type {
   SendVoiceHttpRequest,
+  SharedMediaHttpResponse,
   ChatPersonHttpResponse,
   ChatMessageHttpResponse,
   ChatDetailsHttpResponse,

@@ -41,6 +41,8 @@ class ChatRepositoryError extends Error {
   }
 }
 type VoiceRecordingRecord = { id: string; mediaType: string; bytes: Uint8Array };
+type MediaCategoryRecord = 'photos' | 'videos' | 'files' | 'audio' | 'voice' | 'gifs';
+type MediaCountsRecord = Record<MediaCategoryRecord, number>;
 
 interface ChatsRepository {
   viewer(): Promise<ChatPersonRecord>;
@@ -48,6 +50,14 @@ interface ChatsRepository {
   open(person: ChatPersonRecord): Promise<ChatRecord>;
   get(chatId: string): Promise<ChatRecord>;
   history(chatId: string, before: string | null, limit: number): Promise<HistoryRecord>;
+  mediaCounts(chatId: string): Promise<MediaCountsRecord>;
+  media(
+    chatId: string,
+    category: MediaCategoryRecord,
+    cursor: string | null,
+    limit: number,
+  ): Promise<HistoryRecord>;
+  hide(chatId: string): Promise<void>;
   send(chatId: string, text: string): Promise<ChatMessageRecord>;
   sendVoice(chatId: string, recording: VoiceRecordingRecord): Promise<ChatMessageRecord>;
 }
@@ -61,6 +71,8 @@ export type {
   ChatRecord,
   ChatPageRecord,
   HistoryRecord,
+  MediaCategoryRecord,
+  MediaCountsRecord,
   ChatRepositoryErrorCode,
   VoiceRecordingRecord,
 };

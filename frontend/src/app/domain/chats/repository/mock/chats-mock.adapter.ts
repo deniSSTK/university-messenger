@@ -173,6 +173,18 @@ class ChatsMockAdapter implements ChatsRepository {
     throw new ChatRepositoryError('unavailable');
   }
 
+  async mediaCounts(): Promise<never> {
+    throw new ChatRepositoryError('unavailable');
+  }
+
+  async media(): Promise<never> {
+    throw new ChatRepositoryError('unavailable');
+  }
+
+  async hide(): Promise<never> {
+    throw new ChatRepositoryError('unavailable');
+  }
+
   private requireChat(chats: StoredChat[], chatId: string, viewerId: string) {
     const chat = chats.find(
       (entry) => entry.id === chatId && entry.participants.some((user) => user.id === viewerId),

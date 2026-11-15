@@ -12,6 +12,8 @@ import { IconChat } from '../../../../shared/ui/icons/chat';
 import { IconMore } from '../../../../shared/ui/icons/more';
 import { IconChevronDown } from '../../../../shared/ui/icons/chevron-down';
 import { IconClose } from '../../../../shared/ui/icons/close';
+import { ChatPeerProfile } from './chat-peer-profile';
+import { downloadAttachment } from './download-attachment';
 import { ChatProfileEditor } from './chat-profile-editor';
 import {
   Component,
@@ -113,6 +115,7 @@ function mergeMessages(current: MessageView[], incoming: MessageView[]) {
     VoiceComposer,
     ChatAccountMenu,
     ChatProfileEditor,
+    ChatPeerProfile,
   ],
   templateUrl: './chats.html',
   styleUrls: ['./chats.scss', './chats-activity.scss'],
@@ -143,6 +146,8 @@ class Chats {
   readonly editText = signal('');
   readonly actionBusy = signal(false);
   readonly actionError = signal('');
+  readonly peerProfileOpen = signal(false);
+  readonly peerMediaRevision = signal(0);
   readonly profileOpen = signal(false);
   readonly profileName = signal('');
   readonly profileAvatar = signal<string | null>(null);
@@ -266,6 +271,10 @@ class Chats {
         this.connection.set('ready');
         this.queueLiveSync();
       } else if (event.type === WebSocketEventType.Changed) {
+        if (event.chatId === this.selectedId() && this.peerProfileOpen()) {
+          this.peerMediaRevision.update((value) => value + 1);
+        }
+
         this.queueLiveSync();
       } else if (event.chatId === this.selectedId() && event.userId !== this.viewer()?.id) {
         this.peerTyping.set(event.typing === true);
@@ -389,6 +398,7 @@ class Chats {
     void this.router.navigate(['/chats']);
   }
   async selectChat(chatId: string | null) {
+    this.peerProfileOpen.set(false);
     const generation = ++this.chatGeneration;
     this.navigationGeneration++;
     const previousId = this.selectedId();
@@ -455,6 +465,17 @@ class Chats {
       }
     }
   }
+  peerChatHidden(chatId: string): void {
+    if (this.selectedId() !== chatId) {
+      return;
+    }
+
+    this.peerProfileOpen.set(false);
+    this.chats.update((list) => list.filter((chat) => chat.id !== chatId));
+    this.back();
+    this.queueLiveSync();
+  }
+
   retryChat() {
     void this.selectChat(this.selectedId());
   }
@@ -834,14 +855,7 @@ class Chats {
     }
     try {
       const file = await this.service.download(chatId, message.id);
-      const url = URL.createObjectURL(
-        new Blob([new Uint8Array(file.bytes)], { type: 'application/octet-stream' }),
-      );
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = file.name;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      downloadAttachment(file);
     } catch {
       this.actionError.set('Не вдалося завантажити файл.');
     }

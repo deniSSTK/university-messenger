@@ -277,8 +277,19 @@
           />
         }
         <div class="peer">
-          <strong>{{ active()?.person?.displayName ?? 'Діалог' }}</strong
-          ><span>
+          @if (active(); as chat) {
+            <button
+              class="open-peer-profile"
+              type="button"
+              aria-haspopup="dialog"
+              (click)="peerProfileOpen.set(true)"
+            >
+              {{ chat.person.displayName }}
+            </button>
+          } @else {
+            <strong>Діалог</strong>
+          }
+          <span>
             @if (active(); as chat) {
               {{ peerTyping() ? 'Друкує…' : '@' + chat.person.username }}
             } @else {
@@ -312,7 +323,9 @@
         }
       </header>
       @if (chatLoading()) {
-        <p class="dialog-status loading-status" role="status"><app-spinner />Завантажуємо діалог…</p>
+        <p class="dialog-status loading-status" role="status">
+          <app-spinner />Завантажуємо діалог…
+        </p>
       }
       @if (chatError()) {
         <div class="dialog-status" role="alert">
@@ -525,6 +538,16 @@
     }
   </main>
 </div>
+
+@if (peerProfileOpen() && active(); as chat) {
+  <app-chat-peer-profile
+    [chatId]="chat.id"
+    [person]="chat.person"
+    [mediaRevision]="peerMediaRevision()"
+    (closed)="peerProfileOpen.set(false)"
+    (hidden)="peerChatHidden(chat.id)"
+  />
+}
 
 @if (profileOpen()) {
   <app-chat-profile-editor

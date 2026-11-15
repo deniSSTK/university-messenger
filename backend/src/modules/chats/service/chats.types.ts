@@ -29,9 +29,12 @@ type SendChatMessageInput = {
   text: string;
 };
 
+import type { MediaCategory } from '../domain/shared-media.js';
+
 type ListChatMessagesInput = {
   chatId: string;
   cursor: string | undefined;
+  mediaCategory?: MediaCategory;
   limit: number;
 };
 

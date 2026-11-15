@@ -48,8 +48,13 @@ type ChatFile = { name: string; mediaType: string; bytes: Uint8Array };
 
 type VoiceRecordingInput = { id: string; mediaType: string; bytes: Uint8Array };
 
+type SharedMediaCategory = 'photos' | 'videos' | 'files' | 'audio' | 'voice' | 'gifs';
+type SharedMediaCounts = Record<SharedMediaCategory, number>;
+
 export type {
   VoiceRecordingInput,
+  SharedMediaCategory,
+  SharedMediaCounts,
   ChatPerson,
   ChatMessage,
   Conversation,

@@ -1,5 +1,11 @@
 import { ACTIVITY_REPOSITORY } from '../repository/activity.repository';
-import type { ChatActivity, ChatFile, VoiceRecordingInput } from './chats.types';
+import type {
+  ChatActivity,
+  ChatFile,
+  SharedMediaCategory,
+  SharedMediaCounts,
+  VoiceRecordingInput,
+} from './chats.types';
 import { Injectable, inject } from '@angular/core';
 import { countCodePoints } from '../../../core/text/unicode';
 import { MESSAGE_TEXT_MAX_LENGTH, VOICE_MAX_BYTES } from '../chats.constants';
@@ -230,6 +236,37 @@ class ChatService {
         }),
       ),
     );
+  }
+
+  mediaCounts(chatId: string): Promise<SharedMediaCounts> {
+    return this.run(async () => {
+      const counts = await this.repository.mediaCounts(chatId);
+
+      return {
+        photos: counts.photos,
+        videos: counts.videos,
+        files: counts.files,
+        audio: counts.audio,
+        voice: counts.voice,
+        gifs: counts.gifs,
+      };
+    });
+  }
+
+  media(
+    chatId: string,
+    category: SharedMediaCategory,
+    cursor: string | null,
+  ): Promise<HistoryPage> {
+    return this.run(async () => {
+      const page = await this.repository.media(chatId, category, cursor, 20);
+
+      return { messages: page.messages.map(mapMessage), nextBefore: page.nextBefore };
+    });
+  }
+
+  hide(chatId: string): Promise<void> {
+    return this.run(() => this.repository.hide(chatId));
   }
 
   private async run<T>(operation: () => Promise<T>): Promise<T> {

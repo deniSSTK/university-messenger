@@ -6,6 +6,8 @@ import type {
   VoiceMetadata,
 } from './chats.models.js';
 
+import type { MediaCategory, MediaCounts } from './shared-media.js';
+
 type CreatePrivateChatInput = {
   currentUserId: string;
   recipientId: string;
@@ -46,6 +48,7 @@ type SaveMessageResult = { message: ChatMessage; created: boolean };
 type FindMessagesInput = {
   chatId: string;
   cursor: MessageCursor | null;
+  category?: MediaCategory;
   take: number;
 };
 
@@ -60,6 +63,7 @@ interface IChatsRepository {
   ): Promise<PrivateChat | null>;
   findChat(chatId: string, currentUserId: string): Promise<PrivateChat | null>;
   findChats(input: FindChatsInput): Promise<FindChatsResult>;
+  hideChat(chatId: string, userId: string): Promise<boolean>;
   isActiveMember(chatId: string, userId: string): Promise<boolean>;
 }
 
@@ -89,6 +93,7 @@ interface IMessagesRepository {
   ): Promise<boolean>;
   sendMessage(input: SendMessageInput): Promise<ChatMessage>;
   sendVoiceMessage(input: SendVoiceMessageInput): Promise<SaveMessageResult>;
+  countMedia(chatId: string): Promise<MediaCounts>;
   findMessages(input: FindMessagesInput): Promise<FindMessagesResult>;
 }
 
