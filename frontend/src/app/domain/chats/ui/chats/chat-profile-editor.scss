@@ -1,14 +1,14 @@
 :host {
-  --dialog-color: #f5f5f5;
-  --dialog-background: #17212b;
+  --dialog-color: var(--text-primary);
+  --dialog-background: var(--bg-surface);
 }
 #profile-name {
-  background: #242f3d;
-  color: #f5f5f5;
-  border-color: #3b5368;
+  background: var(--bg-surface-muted);
+  color: var(--text-primary);
+  border-color: var(--border-color);
 }
 label[for='profile-name'] {
-  color: #a4b8ca;
+  color: var(--text-secondary);
 }
 form {
   display: grid;
@@ -29,7 +29,7 @@ app-form-field {
   margin-top: 8px;
 }
 .error {
-  color: #bd394c;
+  color: var(--danger-color);
   font-size: 13px;
   margin: 0;
 }

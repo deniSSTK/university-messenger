@@ -6,12 +6,12 @@ app-form-field {
 app-form-field > label {
   display: block;
   margin-bottom: 6px;
-  color: #5f7180;
+  color: var(--text-secondary);
   font-size: 14px;
 }
 app-form-field .error-messages small {
   display: block;
   margin-top: 5px;
   font-size: 12px;
-  color: #bd394c;
+  color: var(--danger-color);
 }

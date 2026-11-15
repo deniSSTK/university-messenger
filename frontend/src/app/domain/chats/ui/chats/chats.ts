@@ -12,6 +12,9 @@ import { IconChat } from '../../../../shared/ui/icons/chat';
 import { IconMore } from '../../../../shared/ui/icons/more';
 import { IconChevronDown } from '../../../../shared/ui/icons/chevron-down';
 import { IconClose } from '../../../../shared/ui/icons/close';
+import { IconSun } from '../../../../shared/ui/icons/sun';
+import { IconMoon } from '../../../../shared/ui/icons/moon';
+import { ThemeService } from '../../../../core/services/theme.service';
 import { ChatProfileEditor } from './chat-profile-editor';
 import {
   Component,
@@ -100,6 +103,8 @@ function mergeMessages(current: MessageView[], incoming: MessageView[]) {
     IconSearch,
     IconBack,
     IconSend,
+    IconSun,
+    IconMoon,
     ChatBubble,
     ChatAccountMenu,
     ChatProfileEditor,
@@ -114,6 +119,7 @@ class Chats {
   private service = inject(ChatService);
   private users = inject(Users);
   private destroy = inject(DestroyRef);
+  readonly theme = inject(ThemeService);
   readonly drafts = inject(ChatDrafts);
   private searchRequests = new Subject<{ search: string; page: number; wait: boolean }>();
   private chatGeneration = 0;

@@ -58,6 +58,22 @@
           </button>
         }
       </div>
+      <button
+        appButton
+        variant="icon"
+        type="button"
+        class="icon-button"
+        [attr.aria-label]="
+          theme.isDark() ? 'Увімкнути світлу тему' : 'Увімкнути темну тему'
+        "
+        (click)="theme.toggleTheme()"
+      >
+        @if (theme.isDark()) {
+          <app-icon-sun />
+        } @else {
+          <app-icon-moon />
+        }
+      </button>
       @if (accountMenuOpen()) {
         <app-chat-account-menu
           [person]="viewer()"

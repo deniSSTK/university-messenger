@@ -8,8 +8,8 @@
   border-radius: 50%;
   flex: 0 0 auto;
   overflow: hidden;
-  background: linear-gradient(135deg, #85b9d9, #5798c7);
-  color: white;
+  background: linear-gradient(135deg, var(--avatar-gradient-start), var(--avatar-gradient-end));
+  color: var(--text-on-accent);
   font-size: 18px;
 }
 img {
