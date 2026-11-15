@@ -302,6 +302,7 @@ class ChatsService {
     const file = await this.messagesRepository.findAttachment(
       chatId,
       messageId,
+      userId,
     );
 
     if (!file) {
@@ -393,8 +394,8 @@ class ChatsService {
     this.events.publish({ type: WebSocketEventType.Changed, chatId });
   }
 
-  countMedia(chatId: string) {
-    return this.messagesRepository.countMedia(chatId);
+  countMedia(chatId: string, userId: string) {
+    return this.messagesRepository.countMedia(chatId, userId);
   }
 
   async listMessages(
@@ -402,6 +403,7 @@ class ChatsService {
   ): Promise<ListChatMessagesResult> {
     const result = await this.messagesRepository.findMessages({
       chatId: input.chatId,
+      userId: input.userId,
       cursor: decodeCursor(input.cursor),
       take: input.limit,
       ...(input.mediaCategory ? { category: input.mediaCategory } : {}),

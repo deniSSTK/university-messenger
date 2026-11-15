@@ -1031,7 +1031,7 @@ describeDatabase('Chats API (PostgreSQL)', () => {
     ]);
   }, 15_000);
 
-  it('hides a chat only for its requesting member and restores the same history on reopen', async () => {
+  it('clears chat history and attachments only for the requesting member', async () => {
     const alice = await register('alice');
     const bob = await register('bob');
     const outsider = await register('outsider');
@@ -1046,23 +1046,35 @@ describeDatabase('Chats API (PostgreSQL)', () => {
       );
     const chat = await open(alice.accessToken, bob.user.id);
     const base = `/chats/${chat.id}`;
-    await api
-      .post(`${base}/messages`)
-      .set('Authorization', `Bearer ${bob.accessToken}`)
-      .send({ text: 'Історія залишається' })
-      .expect(201);
-    await api
-      .delete(`${base}/visibility`)
-      .set('Authorization', `Bearer ${outsider.accessToken}`)
-      .expect(404);
-    await api
-      .delete(`${base}/visibility`)
-      .set('Authorization', `Bearer ${alice.accessToken}`)
-      .expect(204);
-    await api
-      .delete(`${base}/visibility`)
-      .set('Authorization', `Bearer ${alice.accessToken}`)
-      .expect(204);
+    const send = async (text: string) =>
+      responseBody<MessageResponse>(
+        await api
+          .post(`${base}/messages`)
+          .set('Authorization', `Bearer ${bob.accessToken}`)
+          .send({ text })
+          .expect(201),
+      );
+    const old = await send('Стара історія');
+    const ownFile = responseBody<MessageResponse>(
+      await api
+        .post(`${base}/attachments`)
+        .set('Authorization', `Bearer ${alice.accessToken}`)
+        .send({
+          name: 'photo.png',
+          mediaType: 'image/png',
+          content: 'SGVsbG8=',
+        })
+        .expect(201),
+    );
+    const hide = (token: string) =>
+      api.delete(`${base}/visibility`).set('Authorization', `Bearer ${token}`);
+    const history = async (token: string) =>
+      responseBody<MessageHistoryResponse>(
+        await api
+          .get(`${base}/messages`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200),
+      );
     const list = async (token: string) =>
       responseBody<ChatListResponse>(
         await api
@@ -1070,27 +1082,64 @@ describeDatabase('Chats API (PostgreSQL)', () => {
           .set('Authorization', `Bearer ${token}`)
           .expect(200),
       );
+
+    await hide(outsider.accessToken).expect(404);
+    await hide(alice.accessToken).expect(204);
     expect((await list(alice.accessToken)).items).toEqual([]);
-    expect((await list(bob.accessToken)).items.map(({ id }) => id)).toEqual([
-      chat.id,
+    expect((await list(bob.accessToken)).items[0].lastMessage?.id).toBe(
+      ownFile.id,
+    );
+    expect((await history(alice.accessToken)).items).toEqual([]);
+    expect((await history(bob.accessToken)).items.map(({ id }) => id)).toEqual([
+      ownFile.id,
+      old.id,
     ]);
-    expect((await open(alice.accessToken, bob.user.id)).id).toBe(chat.id);
-    expect((await list(alice.accessToken)).items.map(({ id }) => id)).toEqual([
-      chat.id,
-    ]);
-    const history = await api
-      .get(`${base}/messages`)
-      .set('Authorization', `Bearer ${alice.accessToken}`)
-      .expect(200);
-    expect(
-      responseBody<MessageHistoryResponse>(history).items.map(
-        ({ text }) => text,
-      ),
-    ).toEqual(['Історія залишається']);
     await api
-      .get('/auth/me')
+      .get(`${base}/media`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .expect(200, {
+        photos: 0,
+        videos: 0,
+        files: 0,
+        audio: 0,
+        voice: 0,
+        gifs: 0,
+      });
+    await api
+      .get(`${base}/messages/${ownFile.id}/attachment`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .expect(404);
+    await api
+      .get(`${base}/messages/${ownFile.id}/attachment`)
       .set('Authorization', `Bearer ${bob.accessToken}`)
       .expect(200);
+    await api
+      .delete(`${base}/messages/${ownFile.id}`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .expect(404);
+
+    expect((await open(alice.accessToken, bob.user.id)).id).toBe(chat.id);
+    expect((await list(alice.accessToken)).items[0]).toMatchObject({
+      lastMessage: null,
+      unreadCount: 0,
+    });
+    expect((await history(alice.accessToken)).items).toEqual([]);
+
+    await hide(alice.accessToken).expect(204);
+    const fresh = await send('Нове повідомлення');
+    expect((await list(alice.accessToken)).items[0]).toMatchObject({
+      id: chat.id,
+      lastMessage: { id: fresh.id },
+      unreadCount: 1,
+    });
+    expect(
+      (await history(alice.accessToken)).items.map(({ id }) => id),
+    ).toEqual([fresh.id]);
+    expect((await history(bob.accessToken)).items.map(({ id }) => id)).toEqual([
+      fresh.id,
+      ownFile.id,
+      old.id,
+    ]);
   });
 
   it('delivers authorized WebSocket changes and typing events and rejects a revoked session', async () => {

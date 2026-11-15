@@ -80,7 +80,7 @@ Voice messages reuse private chat attachments and support recordings up to 5 MiB
 
 The backend needs `ffmpeg` and `ffprobe` on PATH for voice uploads and the related end-to-end tests. The backend Docker image includes both. They validate WebM/Opus, MP4/AAC and Ogg/Opus, derive duration and waveform from decoded audio, and remux the original compressed audio for seeking. Apply Prisma migrations before starting the updated API. Voice files use the same private S3 configuration as other attachments.
 
-A private chat’s profile opens from the participant’s name. Its shared media counts and cursor-paginated lists include available photos, videos, files, audio, voice messages, and GIFs across the full conversation. The Delete user action hides only the signed-in member’s entry from their chat list. Finding the other participant through search restores the same conversation and its history.
+A private chat’s profile opens from the participant’s name. Its shared media counts and cursor-paginated lists include available photos, videos, files, audio, voice messages, and GIFs across the full conversation. The Delete user action hides the conversation and clears the signed-in member’s view of its current history, attachments, and unread messages. The other participant retains their history. Sending or receiving a new message shows the conversation again with only messages after the clear.
 
 The core version includes direct conversations only. Group chats, channels, calls, bots, reactions, push notifications, and end-to-end encryption are outside the project scope.
 

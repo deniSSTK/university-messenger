@@ -47,6 +47,7 @@ type SaveMessageResult = { message: ChatMessage; created: boolean };
 
 type FindMessagesInput = {
   chatId: string;
+  userId: string;
   cursor: MessageCursor | null;
   category?: MediaCategory;
   take: number;
@@ -84,6 +85,7 @@ interface IMessagesRepository {
   findAttachment(
     chatId: string,
     messageId: string,
+    userId: string,
   ): Promise<AttachmentData | null>;
   changeMessage(input: ChangeMessageInput): Promise<ChatMessage | null>;
   markRead(
@@ -93,7 +95,7 @@ interface IMessagesRepository {
   ): Promise<boolean>;
   sendMessage(input: SendMessageInput): Promise<ChatMessage>;
   sendVoiceMessage(input: SendVoiceMessageInput): Promise<SaveMessageResult>;
-  countMedia(chatId: string): Promise<MediaCounts>;
+  countMedia(chatId: string, userId: string): Promise<MediaCounts>;
   findMessages(input: FindMessagesInput): Promise<FindMessagesResult>;
 }
 

@@ -201,14 +201,19 @@ class ChatsController {
   @ApiBadRequestResponse({ description: 'Invalid chat ID.' })
   @ApiUnauthorizedResponse({ description: 'Inactive session.' })
   @ApiNotFoundResponse({ description: 'Chat not found.' })
-  countMedia(@Param() params: ChatIdParamsDto): Promise<SharedMediaCountsDto> {
-    return this.chats.countMedia(params.chatId);
+  countMedia(
+    @Param() params: ChatIdParamsDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<SharedMediaCountsDto> {
+    return this.chats.countMedia(params.chatId, request.auth.user.id);
   }
 
   @Delete(':chatId/visibility')
   @HttpCode(204)
   @UseGuards(ChatMemberGuard)
-  @ApiOperation({ summary: 'Hide only the current user’s chat list entry' })
+  @ApiOperation({
+    summary: 'Hide the chat and clear history for the current user',
+  })
   @ApiNoContentResponse()
   @ApiBadRequestResponse({ description: 'Invalid chat ID.' })
   @ApiUnauthorizedResponse({ description: 'Inactive session.' })
@@ -423,9 +428,11 @@ class ChatsController {
   async listMessages(
     @Param() params: ChatIdParamsDto,
     @Query() query: ListMessagesRequestDto,
+    @Req() request: AuthenticatedRequest,
   ): Promise<ListMessagesResponseDto> {
     return this.chats.listMessages({
       chatId: params.chatId,
+      userId: request.auth.user.id,
       cursor: query.cursor,
       ...(query.category ? { mediaCategory: query.category } : {}),
       limit: query.limit,

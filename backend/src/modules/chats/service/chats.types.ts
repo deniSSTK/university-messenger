@@ -33,6 +33,7 @@ import type { MediaCategory } from '../domain/shared-media.js';
 
 type ListChatMessagesInput = {
   chatId: string;
+  userId: string;
   cursor: string | undefined;
   mediaCategory?: MediaCategory;
   limit: number;

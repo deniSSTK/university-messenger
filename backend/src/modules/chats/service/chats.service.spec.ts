@@ -161,6 +161,7 @@ describe('ChatsService', () => {
 
     const result = await service.listMessages({
       chatId: '9c858901-8a57-4791-81fe-4c455b099bc9',
+      userId: 'viewer',
       cursor: undefined,
       limit: 2,
     });
@@ -182,6 +183,7 @@ describe('ChatsService', () => {
       [
         {
           chatId: '9c858901-8a57-4791-81fe-4c455b099bc9',
+          userId: 'viewer',
           cursor: null,
           take: 2,
         },
@@ -193,6 +195,7 @@ describe('ChatsService', () => {
     await expect(
       service.listMessages({
         chatId: '9c858901-8a57-4791-81fe-4c455b099bc9',
+        userId: 'viewer',
         cursor: 'not-a-cursor',
         limit: 20,
       }),

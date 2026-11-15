@@ -269,12 +269,15 @@
           <app-icon-back />
         </button>
         @if (active(); as chat) {
-          <app-avatar
+          <button
             class="peer-avatar"
-            [size]="42"
-            [name]="chat.person.displayName"
-            [src]="chat.person.avatarUrl"
-          />
+            type="button"
+            aria-haspopup="dialog"
+            [attr.aria-label]="'Відкрити профіль: ' + chat.person.displayName"
+            (click)="peerProfileOpen.set(true)"
+          >
+            <app-avatar [size]="42" [name]="chat.person.displayName" [src]="chat.person.avatarUrl" />
+          </button>
         }
         <div class="peer">
           @if (active(); as chat) {
