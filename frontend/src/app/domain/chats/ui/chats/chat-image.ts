@@ -34,7 +34,7 @@ import { Spinner } from '../../../../shared/ui/spinner/spinner';
         Не вдалося завантажити фото. Повторити
       </button>
     } @else {
-      <div class="image-status" role="status"><app-spinner />Завантажуємо фото…</div>
+      <div class="image-status loading-status" role="status"><app-spinner />Завантажуємо фото…</div>
     }
   `,
   styleUrl: './chat-image.scss',

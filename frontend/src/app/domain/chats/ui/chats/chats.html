@@ -85,7 +85,7 @@
       }
       @if (searching()) {
         @if (searchLoading()) {
-          <p class="status" role="status"><app-spinner />Шукаємо користувачів…</p>
+          <p class="status loading-status" role="status"><app-spinner />Шукаємо користувачів…</p>
         }
         @if (searchError()) {
           <div class="status error" role="alert">
@@ -157,7 +157,7 @@
         }
       } @else {
         @if (listLoading() && chats().length === 0) {
-          <p class="status" role="status"><app-spinner />Завантажуємо чати…</p>
+          <p class="status loading-status" role="status"><app-spinner />Завантажуємо чати…</p>
         }
         @if (listError()) {
           <div class="status error" role="alert">
@@ -312,7 +312,7 @@
         }
       </header>
       @if (chatLoading()) {
-        <p class="dialog-status" role="status"><app-spinner />Завантажуємо діалог…</p>
+        <p class="dialog-status loading-status" role="status"><app-spinner />Завантажуємо діалог…</p>
       }
       @if (chatError()) {
         <div class="dialog-status" role="alert">

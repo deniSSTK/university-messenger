@@ -19,6 +19,12 @@ body {
   min-height: 100dvh;
 }
 
+.loading-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 input:focus-visible,
 button:focus-visible,
 a:focus-visible {
