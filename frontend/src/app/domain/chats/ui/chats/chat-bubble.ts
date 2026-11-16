@@ -17,6 +17,7 @@ import { IconDownload } from '../../../../shared/ui/icons/download';
 import { IconCheck } from '../../../../shared/ui/icons/check';
 import { IconCheckDouble } from '../../../../shared/ui/icons/check-double';
 import { IconMore } from '../../../../shared/ui/icons/more';
+import { VoicePlayer } from './voice-player';
 import { ChatImage } from './chat-image';
 import type { MessageView } from './chats-view.types';
 
@@ -32,17 +33,26 @@ import type { MessageView } from './chats-view.types';
     IconCheckDouble,
     IconMore,
     ChatImage,
+    VoicePlayer,
   ],
   template: `
     <article
       class="message"
       [class.own]="own()"
       [class.has-photo]="isImage()"
+      [class.has-voice]="!!message().attachment?.voice"
       (contextmenu)="openMenu($event)"
       (keydown.escape)="menu.set(null)"
     >
       @if (message().attachment; as file) {
-        @if (isImage()) {
+        @if (file.voice; as voice) {
+          <app-voice-player
+            [chatId]="chatId()"
+            [messageId]="message().id"
+            [durationMs]="voice.durationMs"
+            [waveform]="voice.waveform"
+          />
+        } @else if (isImage()) {
           <app-chat-image
             [chatId]="chatId()"
             [messageId]="message().id"

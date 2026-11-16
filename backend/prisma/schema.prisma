@@ -56,10 +56,12 @@ model Chat {
 }
 
 model ChatMember {
-  chatId    String    @db.Uuid
-  userId    String    @db.Uuid
-  joinedAt  DateTime  @default(now()) @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  chatId                String    @db.Uuid
+  userId                String    @db.Uuid
+  hiddenAt              DateTime? @db.Timestamptz(3)
+  historyClearedThrough DateTime? @db.Timestamptz(3)
+  joinedAt              DateTime  @default(now()) @db.Timestamptz(3)
+  deletedAt             DateTime? @db.Timestamptz(3)
 
   chat Chat @relation(fields: [chatId], references: [id], onDelete: Restrict)
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
@@ -69,23 +71,49 @@ model ChatMember {
 }
 
 model Message {
-  id        String    @id @default(uuid()) @db.Uuid
-  chatId    String    @db.Uuid
-  senderId  String    @db.Uuid
+  id             String    @id @default(uuid()) @db.Uuid
+  chatId         String    @db.Uuid
+  senderId       String    @db.Uuid
+  attachmentId   String?   @unique @db.Uuid
+  voiceRequestId String?   @db.Uuid
+  text           String
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  editedAt       DateTime? @db.Timestamptz(3)
+  readAt         DateTime? @db.Timestamptz(3)
+  deletedAt      DateTime? @db.Timestamptz(3)
+
+  chat       Chat        @relation(fields: [chatId], references: [id], onDelete: Restrict)
+  sender     User        @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  attachment Attachment? @relation(fields: [attachmentId], references: [id], onDelete: Restrict)
+
+  @@unique([chatId, senderId, voiceRequestId])
+  @@index([chatId, createdAt, id])
+  @@index([senderId])
+}
+
+enum AttachmentType {
+  FILE
+  VOICE
+}
+
+model Attachment {
+  id        String         @id @default(uuid()) @db.Uuid
+  type      AttachmentType
   fileName  String?
   fileType  String?
   fileSize  Int?
   fileData  Bytes?
   fileKey   String?
-  text      String
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  editedAt  DateTime? @db.Timestamptz(3)
-  readAt    DateTime? @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime       @default(now()) @db.Timestamptz(3)
 
-  chat   Chat @relation(fields: [chatId], references: [id], onDelete: Restrict)
-  sender User @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  message Message?
+  voice   AttachmentVoice?
+}
 
-  @@index([chatId, createdAt, id])
-  @@index([senderId])
+model AttachmentVoice {
+  attachmentId String @id @db.Uuid
+  durationMs   Int
+  waveform     Int[]  @default([])
+
+  attachment Attachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
 }

@@ -12,9 +12,43 @@ import type {
   FindMessagesInput,
   FindMessagesResult,
   SendMessageInput,
+  SendVoiceMessageInput,
+  SaveMessageResult,
   ChangeMessageInput,
   AttachmentData,
 } from '../domain/chats.repository.js';
+
+import {
+  GIF_TYPE,
+  PHOTO_TYPES,
+  mediaCategory,
+} from '../domain/shared-media.js';
+import type { MediaCategory, MediaCounts } from '../domain/shared-media.js';
+
+const sharedAttachment: Prisma.AttachmentWhereInput = {
+  fileName: { not: null },
+  OR: [{ fileKey: { not: null } }, { fileData: { not: null } }],
+};
+const photos: Prisma.AttachmentWhereInput = {
+  fileType: { in: PHOTO_TYPES, mode: 'insensitive' },
+};
+const gifs: Prisma.AttachmentWhereInput = {
+  fileType: { equals: GIF_TYPE, mode: 'insensitive' },
+};
+const videos: Prisma.AttachmentWhereInput = {
+  fileType: { startsWith: 'video/', mode: 'insensitive' },
+};
+const audio: Prisma.AttachmentWhereInput = {
+  fileType: { startsWith: 'audio/', mode: 'insensitive' },
+};
+const mediaFilters: Record<MediaCategory, Prisma.AttachmentWhereInput> = {
+  photos,
+  gifs,
+  videos,
+  audio,
+  voice: {},
+  files: { OR: [{ fileType: null }, { NOT: [photos, gifs, videos, audio] }] },
+};
 
 const participantSelect = {
   id: true,
@@ -31,10 +65,16 @@ const messageSelect = {
   senderId: true,
   createdAt: true,
   editedAt: true,
+  deletedAt: true,
   readAt: true,
-  fileName: true,
-  fileType: true,
-  fileSize: true,
+  attachment: {
+    select: {
+      fileName: true,
+      fileType: true,
+      fileSize: true,
+      voice: { select: { durationMs: true, waveform: true } },
+    },
+  },
   sender: { select: participantSelect },
 } as const;
 
@@ -59,11 +99,15 @@ type PrivateChatRow = Prisma.ChatGetPayload<{
 type ChatPageRow = {
   id: string | null;
   total: number;
+  lastMessageId: string | null;
+  unreadCount: number;
 };
 
 function mapMessage(
   message: Prisma.MessageGetPayload<{ select: typeof messageSelect }>,
 ): ChatMessage {
+  const file = message.attachment;
+
   return {
     id: message.id,
     chatId: message.chatId,
@@ -73,11 +117,12 @@ function mapMessage(
     createdAt: message.createdAt,
     editedAt: message.editedAt,
     readAt: message.readAt,
-    attachment: message.fileName
+    attachment: file?.fileName
       ? {
-          name: message.fileName,
-          mediaType: message.fileType ?? 'application/octet-stream',
-          size: message.fileSize ?? 0,
+          name: file.fileName,
+          mediaType: file.fileType ?? 'application/octet-stream',
+          size: file.fileSize ?? 0,
+          ...(file.voice ? { voice: file.voice } : {}),
         }
       : null,
   };
@@ -91,6 +136,25 @@ function mapPrivateChat(chat: PrivateChatRow): PrivateChat | null {
   }
 
   return { id: chat.id, createdAt: chat.createdAt, recipient };
+}
+
+async function visibleHistory(
+  database: Prisma.TransactionClient,
+  chatId: string,
+  userId: string,
+): Promise<Prisma.MessageWhereInput> {
+  const membership = await database.chatMember.findFirst({
+    where: { chatId, userId, deletedAt: null, chat: { deletedAt: null } },
+    select: { historyClearedThrough: true },
+  });
+
+  if (!membership) {
+    throw new ChatNotFoundError();
+  }
+
+  return membership.historyClearedThrough
+    ? { createdAt: { gt: membership.historyClearedThrough } }
+    : {};
 }
 
 @Injectable()
@@ -138,6 +202,16 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
             return null;
           }
 
+          await transaction.chatMember.updateMany({
+            where: {
+              chatId: existingChat.id,
+              userId: currentUserId,
+              deletedAt: null,
+              hiddenAt: { not: null },
+            },
+            data: { hiddenAt: null },
+          });
+
           return mapPrivateChat(existingChat);
         }
 
@@ -180,12 +254,13 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
         const { currentUserId, offset, take } = input;
         const page = await transaction.$queryRaw<ChatPageRow[]>`
           WITH eligible AS (
-            SELECT chat."id", chat."createdAt"
+            SELECT chat."id", chat."createdAt", membership."historyClearedThrough"
             FROM "Chat" AS chat
             JOIN "ChatMember" AS membership ON membership."chatId" = chat."id"
             WHERE chat."deletedAt" IS NULL
               AND membership."userId" = ${currentUserId}::uuid
               AND membership."deletedAt" IS NULL
+              AND membership."hiddenAt" IS NULL
               AND EXISTS (
                 SELECT 1
                 FROM "ChatMember" AS other
@@ -196,20 +271,30 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
                   AND recipient."deletedAt" IS NULL
               )
           ), page AS (
-            SELECT eligible."id",
+            SELECT eligible."id", eligible."historyClearedThrough", latest."id" AS "lastMessageId",
                    COALESCE(latest."createdAt", eligible."createdAt") AS activity
             FROM eligible
             LEFT JOIN LATERAL (
-              SELECT message."createdAt"
+              SELECT message."id", message."createdAt"
               FROM "Message" AS message
               WHERE message."chatId" = eligible."id" AND message."deletedAt" IS NULL
+                AND message."createdAt" > COALESCE(eligible."historyClearedThrough", '-infinity'::timestamptz)
               ORDER BY message."createdAt" DESC, message."id" DESC
               LIMIT 1
             ) AS latest ON TRUE
             ORDER BY activity DESC, eligible."id" DESC
             LIMIT ${take} OFFSET ${offset}
           )
-          SELECT page."id", totals.total
+          SELECT page."id", totals.total, page."lastMessageId",
+                 (
+                   SELECT count(*)::int
+                   FROM "Message" AS unread
+                   WHERE unread."chatId" = page."id"
+                     AND unread."deletedAt" IS NULL
+                     AND unread."readAt" IS NULL
+                     AND unread."senderId" <> ${currentUserId}::uuid
+                     AND unread."createdAt" > COALESCE(page."historyClearedThrough", '-infinity'::timestamptz)
+                 ) AS "unreadCount"
           FROM (SELECT count(*)::int AS total FROM eligible) AS totals
           LEFT JOIN page ON TRUE
           ORDER BY page.activity DESC, page."id" DESC
@@ -223,52 +308,82 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
 
         const chats = await transaction.chat.findMany({
           where: { id: { in: ids } },
-          select: {
-            ...selectPrivateChat(currentUserId),
-            _count: {
-              select: {
-                messages: {
-                  where: {
-                    deletedAt: null,
-                    readAt: null,
-                    senderId: { not: currentUserId },
-                  },
-                },
-              },
-            },
-            messages: {
-              where: { deletedAt: null },
-              orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-              take: 1,
-              select: messageSelect,
-            },
-          },
+          select: selectPrivateChat(currentUserId),
         });
-
+        const latestIds = page.flatMap((row) =>
+          row.lastMessageId ? [row.lastMessageId] : [],
+        );
+        const latestMessages = await transaction.message.findMany({
+          where: { id: { in: latestIds } },
+          select: messageSelect,
+        });
+        const latestById = new Map(
+          latestMessages.map((message) => [message.id, message]),
+        );
         const chatsById = new Map(chats.map((chat) => [chat.id, chat]));
-        const items = ids.map((id) => {
+        const items = page.flatMap(({ id, lastMessageId, unreadCount }) => {
+          if (!id) {
+            return [];
+          }
+
           const row = chatsById.get(id);
           const chat = row && mapPrivateChat(row);
 
-          if (!row || !chat) {
+          if (!chat) {
             throw new Error(`Could not load eligible private chat ${id}`);
           }
 
-          const latest = row.messages[0];
+          const latest = lastMessageId
+            ? latestById.get(lastMessageId)
+            : undefined;
 
-          return {
-            id: chat.id,
-            recipient: chat.recipient,
-            lastMessage: latest ? mapMessage(latest) : null,
-            lastActivityAt: latest?.createdAt ?? chat.createdAt,
-            unreadCount: row._count.messages,
-          };
+          return [
+            {
+              id: chat.id,
+              recipient: chat.recipient,
+              lastMessage: latest ? mapMessage(latest) : null,
+              lastActivityAt: latest?.createdAt ?? chat.createdAt,
+              unreadCount,
+            },
+          ];
         });
 
         return { items, total };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
+  }
+
+  async hideChat(chatId: string, userId: string): Promise<boolean> {
+    return this.prisma.$transaction(async (transaction) => {
+      const [chat] = await transaction.$queryRaw<{ id: string }[]>`
+        SELECT chat."id"
+        FROM "Chat" AS chat
+        JOIN "ChatMember" AS member ON member."chatId" = chat."id"
+        WHERE chat."id" = ${chatId}::uuid AND chat."deletedAt" IS NULL
+          AND member."userId" = ${userId}::uuid AND member."deletedAt" IS NULL
+        FOR UPDATE OF chat
+      `;
+
+      if (!chat) {
+        return false;
+      }
+
+      const latest = await transaction.message.findFirst({
+        where: { chatId },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: { createdAt: true },
+      });
+      const result = await transaction.chatMember.updateMany({
+        where: { chatId, userId, deletedAt: null },
+        data: {
+          hiddenAt: new Date(),
+          historyClearedThrough: latest?.createdAt ?? null,
+        },
+      });
+
+      return result.count > 0;
+    });
   }
 
   async isActiveMember(chatId: string, userId: string): Promise<boolean> {
@@ -287,9 +402,22 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
   }
 
   async sendMessage(input: SendMessageInput): Promise<ChatMessage> {
+    return (await this.persistMessage(input)).message;
+  }
+
+  sendVoiceMessage(input: SendVoiceMessageInput): Promise<SaveMessageResult> {
+    return this.persistMessage(input, input);
+  }
+
+  private persistMessage(
+    input: SendMessageInput,
+    voice?: SendVoiceMessageInput,
+  ): Promise<SaveMessageResult> {
     return this.prisma.$transaction(async (transaction) => {
-      const [membership] = await transaction.$queryRaw<{ id: string }[]>`
-        SELECT chat."id"
+      const [membership] = await transaction.$queryRaw<
+        { historyClearedThrough: Date | null }[]
+      >`
+        SELECT membership."historyClearedThrough"
         FROM "Chat" AS chat
         JOIN "ChatMember" AS membership ON membership."chatId" = chat."id"
         WHERE chat."id" = ${input.chatId}::uuid
@@ -301,6 +429,31 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
 
       if (!membership) {
         throw new ChatNotFoundError();
+      }
+
+      if (voice) {
+        const existing = await transaction.message.findUnique({
+          where: {
+            chatId_senderId_voiceRequestId: {
+              chatId: input.chatId,
+              senderId: input.senderId,
+              voiceRequestId: voice.id,
+            },
+          },
+          select: messageSelect,
+        });
+
+        if (existing) {
+          if (
+            existing.deletedAt ||
+            (membership.historyClearedThrough &&
+              existing.createdAt <= membership.historyClearedThrough)
+          ) {
+            throw new ChatNotFoundError();
+          }
+
+          return { message: mapMessage(existing), created: false };
+        }
       }
 
       // A later send must sort ahead of the previous message even within one millisecond.
@@ -323,17 +476,25 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
 
       const message = await transaction.message.create({
         data: {
-          chatId: input.chatId,
-          senderId: input.senderId,
+          chat: { connect: { id: input.chatId } },
+          sender: { connect: { id: input.senderId } },
           text: input.text,
           ...(input.file
             ? {
-                fileName: input.file.name,
-                fileType: input.file.mediaType,
-                fileSize: input.file.size,
-                fileKey: input.file.key,
+                attachment: {
+                  create: {
+                    type: voice ? ('VOICE' as const) : ('FILE' as const),
+                    fileName: input.file.name,
+                    fileType: input.file.mediaType,
+                    fileSize: input.file.size,
+                    fileKey: input.file.key,
+                    createdAt: activity.activityAt,
+                    ...(voice ? { voice: { create: voice.voice } } : {}),
+                  },
+                },
               }
             : {}),
+          ...(voice ? { voiceRequestId: voice.id } : {}),
           createdAt: activity.activityAt,
         },
         select: messageSelect,
@@ -344,39 +505,66 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
         data: { updatedAt: activity.activityAt },
       });
 
-      return mapMessage(message);
+      await transaction.chatMember.updateMany({
+        where: {
+          chatId: input.chatId,
+          deletedAt: null,
+          hiddenAt: { not: null },
+        },
+        data: { hiddenAt: null },
+      });
+
+      return { message: mapMessage(message), created: true };
     });
   }
 
   async findAttachment(
     chatId: string,
     messageId: string,
+    userId: string,
   ): Promise<AttachmentData | null> {
+    const visible = await visibleHistory(this.prisma, chatId, userId);
     const message = await this.prisma.message.findFirst({
-      where: { id: messageId, chatId, deletedAt: null },
-      select: { fileName: true, fileType: true, fileData: true, fileKey: true },
+      where: { id: messageId, chatId, deletedAt: null, ...visible },
+      select: {
+        attachment: {
+          select: {
+            fileName: true,
+            fileType: true,
+            fileData: true,
+            fileKey: true,
+          },
+        },
+      },
     });
+    const file = message?.attachment;
 
-    if (!message?.fileName || (!message.fileData && !message.fileKey)) {
+    if (!file?.fileName || (!file.fileData && !file.fileKey)) {
       return null;
     }
 
     return {
-      name: message.fileName,
-      mediaType: message.fileType ?? 'application/octet-stream',
-      key: message.fileKey,
-      legacyBytes: message.fileData,
+      name: file.fileName,
+      mediaType: file.fileType ?? 'application/octet-stream',
+      key: file.fileKey,
+      legacyBytes: file.fileData,
     };
   }
 
   async changeMessage(input: ChangeMessageInput): Promise<ChatMessage | null> {
     return this.prisma.$transaction(async (transaction) => {
+      const visible = await visibleHistory(
+        transaction,
+        input.chatId,
+        input.userId,
+      );
       const changed = await transaction.message.updateMany({
         where: {
           id: input.messageId,
           chatId: input.chatId,
           senderId: input.userId,
           deletedAt: null,
+          ...visible,
           chat: {
             deletedAt: null,
             members: { some: { userId: input.userId, deletedAt: null } },
@@ -407,8 +595,9 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
     throughMessageId: string,
   ): Promise<boolean> {
     return this.prisma.$transaction(async (transaction) => {
+      const visible = await visibleHistory(transaction, chatId, userId);
       const boundary = await transaction.message.findFirst({
-        where: { id: throughMessageId, chatId, deletedAt: null },
+        where: { id: throughMessageId, chatId, deletedAt: null, ...visible },
         select: { createdAt: true, id: true },
       });
 
@@ -422,6 +611,7 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
           senderId: { not: userId },
           deletedAt: null,
           readAt: null,
+          ...visible,
           chat: {
             deletedAt: null,
             members: { some: { userId, deletedAt: null } },
@@ -438,7 +628,47 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
     });
   }
 
+  async countMedia(chatId: string, userId: string): Promise<MediaCounts> {
+    const rows = await this.prisma.$transaction(
+      async (transaction) => {
+        const visible = await visibleHistory(transaction, chatId, userId);
+
+        return transaction.attachment.groupBy({
+          by: ['type', 'fileType'],
+          where: {
+            ...sharedAttachment,
+            message: { chatId, deletedAt: null, ...visible },
+          },
+          _count: { _all: true },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+    const counts: MediaCounts = {
+      photos: 0,
+      videos: 0,
+      files: 0,
+      audio: 0,
+      voice: 0,
+      gifs: 0,
+    };
+
+    for (const row of rows) {
+      const category =
+        row.type === 'VOICE' ? 'voice' : mediaCategory(row.fileType);
+      counts[category] += row._count._all;
+    }
+
+    return counts;
+  }
+
   async findMessages(input: FindMessagesInput): Promise<FindMessagesResult> {
+    const visible = await visibleHistory(
+      this.prisma,
+      input.chatId,
+      input.userId,
+    );
+    const category = input.category;
     const cursorFilter = input.cursor
       ? {
           OR: [
@@ -455,7 +685,16 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
       where: {
         chatId: input.chatId,
         deletedAt: null,
+        ...visible,
         ...cursorFilter,
+        ...(category
+          ? {
+              attachment: {
+                AND: [sharedAttachment, mediaFilters[category]],
+                type: category === 'voice' ? 'VOICE' : 'FILE',
+              },
+            }
+          : {}),
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: input.take + 1,

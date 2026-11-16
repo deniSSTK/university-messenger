@@ -3,7 +3,10 @@ import type {
   ChatMessage,
   MessageCursor,
   PrivateChat,
+  VoiceMetadata,
 } from './chats.models.js';
+
+import type { MediaCategory, MediaCounts } from './shared-media.js';
 
 type CreatePrivateChatInput = {
   currentUserId: string;
@@ -21,16 +24,32 @@ type FindChatsResult = {
   total: number;
 };
 
+type MessageFile = {
+  name: string;
+  mediaType: string;
+  size: number;
+  key: string;
+};
+
 type SendMessageInput = {
   chatId: string;
   senderId: string;
   text: string;
-  file?: { name: string; mediaType: string; size: number; key: string };
+  file?: MessageFile;
 };
+
+type SendVoiceMessageInput = SendMessageInput & {
+  id: string;
+  file: MessageFile;
+  voice: VoiceMetadata;
+};
+type SaveMessageResult = { message: ChatMessage; created: boolean };
 
 type FindMessagesInput = {
   chatId: string;
+  userId: string;
   cursor: MessageCursor | null;
+  category?: MediaCategory;
   take: number;
 };
 
@@ -45,6 +64,7 @@ interface IChatsRepository {
   ): Promise<PrivateChat | null>;
   findChat(chatId: string, currentUserId: string): Promise<PrivateChat | null>;
   findChats(input: FindChatsInput): Promise<FindChatsResult>;
+  hideChat(chatId: string, userId: string): Promise<boolean>;
   isActiveMember(chatId: string, userId: string): Promise<boolean>;
 }
 
@@ -65,6 +85,7 @@ interface IMessagesRepository {
   findAttachment(
     chatId: string,
     messageId: string,
+    userId: string,
   ): Promise<AttachmentData | null>;
   changeMessage(input: ChangeMessageInput): Promise<ChatMessage | null>;
   markRead(
@@ -73,6 +94,8 @@ interface IMessagesRepository {
     throughMessageId: string,
   ): Promise<boolean>;
   sendMessage(input: SendMessageInput): Promise<ChatMessage>;
+  sendVoiceMessage(input: SendVoiceMessageInput): Promise<SaveMessageResult>;
+  countMedia(chatId: string, userId: string): Promise<MediaCounts>;
   findMessages(input: FindMessagesInput): Promise<FindMessagesResult>;
 }
 
@@ -91,4 +114,6 @@ export type {
   IChatsRepository,
   IMessagesRepository,
   SendMessageInput,
+  SendVoiceMessageInput,
+  SaveMessageResult,
 };

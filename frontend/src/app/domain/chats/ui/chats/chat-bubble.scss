@@ -23,6 +23,11 @@ p {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.message.has-voice {
+  width: min(395px, 61vw);
+  box-sizing: border-box;
+  padding: 9px 12px 6px;
+}
 .message-meta {
   display: flex;
   align-items: center;

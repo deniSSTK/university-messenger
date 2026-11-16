@@ -2,6 +2,7 @@ import { readStorageConfig } from './storage.config.js';
 import { Injectable } from '@nestjs/common';
 import {
   readDatabaseConfig,
+  readBoundedInteger,
   readPort,
   readPositiveInteger,
   type DatabaseConfig,
@@ -12,6 +13,13 @@ class AppConfig {
   readonly storage = readStorageConfig();
   readonly accessTokenTtl = readPositiveInteger('JWT_ACCESS_TOKEN_TTL');
   readonly sessionTtl = readPositiveInteger('JWT_SESSION_TTL');
+  readonly trustProxyHops = readBoundedInteger('TRUST_PROXY_HOPS', 0, 0, 1);
+  readonly rateLimitMaxClients = readBoundedInteger(
+    'RATE_LIMIT_MAX_CLIENTS',
+    2048,
+    1,
+    32768,
+  );
   readonly port = readPort('PORT', 3000);
   readonly authCookiePath = process.env.AUTH_COOKIE_PATH ?? '/auth';
   readonly database: DatabaseConfig;

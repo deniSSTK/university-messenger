@@ -1,3 +1,7 @@
+import {
+  RateLimit,
+  RateLimitPeriod,
+} from '../../../../core/rate-limit/rate-limit.decorator.js';
 import { ApiServiceUnavailableResponse } from '@nestjs/swagger';
 import { Body, Patch, BadRequestException } from '@nestjs/common';
 import { InvalidProfileError } from '../../domain/profile.models.js';
@@ -28,6 +32,7 @@ class UsersController {
   constructor(private readonly users: UsersService) {}
 
   @Patch('me')
+  @RateLimit(12, RateLimitPeriod.MINUTE)
   @ApiOperation({ summary: 'Update your display name and avatar' })
   @ApiOkResponse({ type: ProfileResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid name or avatar.' })
@@ -59,6 +64,7 @@ class UsersController {
   }
 
   @Get()
+  @RateLimit(90, RateLimitPeriod.MINUTE)
   @ApiOperation({
     summary: 'Find other users by username prefix',
     description:

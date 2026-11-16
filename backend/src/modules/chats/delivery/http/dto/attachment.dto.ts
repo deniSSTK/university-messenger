@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsBase64, IsString, Length, MaxLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional, PickType } from '@nestjs/swagger';
+import { IsBase64, IsString, IsUUID, Length, MaxLength } from 'class-validator';
 import { FILE_EXAMPLES } from './attachment.examples.js';
 class SendAttachmentDto {
   @ApiProperty({ example: FILE_EXAMPLES.name, maxLength: 255 })
@@ -22,6 +22,23 @@ class SendAttachmentDto {
   @MaxLength(6990508)
   content!: string;
 }
+class SendVoiceDto extends PickType(SendAttachmentDto, [
+  'mediaType',
+  'content',
+]) {
+  @ApiProperty({ example: FILE_EXAMPLES.voiceId, format: 'uuid' })
+  @IsUUID('4')
+  id!: string;
+}
+
+class VoiceMetadataDto {
+  @ApiProperty({ example: FILE_EXAMPLES.durationMs })
+  durationMs!: number;
+
+  @ApiProperty({ example: FILE_EXAMPLES.waveform, type: [Number] })
+  waveform!: number[];
+}
+
 class AttachmentResponseDto {
   @ApiProperty({ example: FILE_EXAMPLES.name })
   name!: string;
@@ -41,6 +58,14 @@ class AttachmentMetadataDto {
 
   @ApiProperty({ example: FILE_EXAMPLES.size })
   size!: number;
+
+  @ApiPropertyOptional({ type: VoiceMetadataDto })
+  voice?: VoiceMetadataDto;
 }
 
-export { SendAttachmentDto, AttachmentResponseDto, AttachmentMetadataDto };
+export {
+  SendAttachmentDto,
+  AttachmentResponseDto,
+  AttachmentMetadataDto,
+  SendVoiceDto,
+};

@@ -1,8 +1,14 @@
 import { ACTIVITY_REPOSITORY } from '../repository/activity.repository';
-import type { ChatActivity, ChatFile } from './chats.types';
+import type {
+  ChatActivity,
+  ChatFile,
+  SharedMediaCategory,
+  SharedMediaCounts,
+  VoiceRecordingInput,
+} from './chats.types';
 import { Injectable, inject } from '@angular/core';
 import { countCodePoints } from '../../../core/text/unicode';
-import { MESSAGE_TEXT_MAX_LENGTH } from '../chats.constants';
+import { MESSAGE_TEXT_MAX_LENGTH, VOICE_MAX_BYTES } from '../chats.constants';
 import { CHATS_REPOSITORY, ChatRepositoryError } from '../repository/chats.repository';
 import type {
   ChatMessageRecord,
@@ -38,6 +44,14 @@ function mapMessage(message: ChatMessageRecord): ChatMessage {
                 name: message.attachment.name,
                 mediaType: message.attachment.mediaType,
                 size: message.attachment.size,
+                ...(message.attachment.voice
+                  ? {
+                      voice: {
+                        durationMs: message.attachment.voice.durationMs,
+                        waveform: message.attachment.voice.waveform,
+                      },
+                    }
+                  : {}),
               }
             : null,
         }
@@ -208,6 +222,53 @@ class ChatService {
 
     return this.run(async () => mapMessage(await this.repository.send(chatId, text)));
   }
+  sendVoice(chatId: string, recording: VoiceRecordingInput): Promise<ChatMessage> {
+    if (recording.bytes.length < 1 || recording.bytes.length > VOICE_MAX_BYTES) {
+      return Promise.reject(new ChatError('validation'));
+    }
+
+    return this.run(async () =>
+      mapMessage(
+        await this.repository.sendVoice(chatId, {
+          id: recording.id,
+          mediaType: recording.mediaType,
+          bytes: recording.bytes,
+        }),
+      ),
+    );
+  }
+
+  mediaCounts(chatId: string): Promise<SharedMediaCounts> {
+    return this.run(async () => {
+      const counts = await this.repository.mediaCounts(chatId);
+
+      return {
+        photos: counts.photos,
+        videos: counts.videos,
+        files: counts.files,
+        audio: counts.audio,
+        voice: counts.voice,
+        gifs: counts.gifs,
+      };
+    });
+  }
+
+  media(
+    chatId: string,
+    category: SharedMediaCategory,
+    cursor: string | null,
+  ): Promise<HistoryPage> {
+    return this.run(async () => {
+      const page = await this.repository.media(chatId, category, cursor, 20);
+
+      return { messages: page.messages.map(mapMessage), nextBefore: page.nextBefore };
+    });
+  }
+
+  hide(chatId: string): Promise<void> {
+    return this.run(() => this.repository.hide(chatId));
+  }
+
   private async run<T>(operation: () => Promise<T>): Promise<T> {
     try {
       return await operation();

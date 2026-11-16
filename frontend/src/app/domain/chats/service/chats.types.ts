@@ -12,7 +12,12 @@ interface ChatMessage {
   createdAt: string;
   editedAt?: string | null;
   readAt?: string | null;
-  attachment?: { name: string; mediaType: string; size: number } | null;
+  attachment?: {
+    name: string;
+    mediaType: string;
+    size: number;
+    voice?: { durationMs: number; waveform: number[] };
+  } | null;
 }
 interface Conversation {
   id: string;
@@ -41,7 +46,15 @@ type ChatActivity = {
 };
 type ChatFile = { name: string; mediaType: string; bytes: Uint8Array };
 
+type VoiceRecordingInput = { id: string; mediaType: string; bytes: Uint8Array };
+
+type SharedMediaCategory = 'photos' | 'videos' | 'files' | 'audio' | 'voice' | 'gifs';
+type SharedMediaCounts = Record<SharedMediaCategory, number>;
+
 export type {
+  VoiceRecordingInput,
+  SharedMediaCategory,
+  SharedMediaCounts,
   ChatPerson,
   ChatMessage,
   Conversation,

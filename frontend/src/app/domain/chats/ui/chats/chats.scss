@@ -276,7 +276,15 @@
   border-bottom: 1px solid #0e1621;
 }
 .peer-avatar {
-  --avatar-size: 42px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.peer-avatar:hover {
+  box-shadow: 0 0 0 2px var(--chat-accent);
 }
 .peer {
   display: grid;
@@ -284,14 +292,29 @@
   gap: 3px;
   min-width: 0;
 }
+.open-peer-profile {
+  justify-self: start;
+  max-width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: start;
+}
+.open-peer-profile:hover {
+  color: var(--chat-accent);
+}
 .peer strong,
+.open-peer-profile,
 .peer span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   user-select: none;
 }
-.peer strong {
+.peer strong,
+.open-peer-profile {
   font-size: 16px;
   font-weight: 600;
 }
@@ -391,6 +414,18 @@
   gap: 8px;
   min-height: 54px;
   padding: 5px 0;
+}
+.composer app-voice-composer {
+  order: 1;
+  flex: 0 0 44px;
+}
+.composer app-voice-composer.composer-hidden,
+.composer.voice-active > :not(app-voice-composer) {
+  display: none;
+}
+.composer.voice-active app-voice-composer {
+  display: block;
+  flex: 1;
 }
 .composer textarea {
   flex: 1;
@@ -512,9 +547,6 @@
   }
   .back-button {
     display: inline-flex;
-  }
-  .peer-avatar {
-    --avatar-size: 38px;
   }
   .messages {
     padding: 8px 12px;

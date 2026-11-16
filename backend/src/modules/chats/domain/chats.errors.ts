@@ -30,7 +30,16 @@ class InvalidMessageCursorError extends Error {
   }
 }
 
+class InvalidVoiceAudioError extends Error {
+  constructor() {
+    super(
+      'Voice audio must be valid WebM/Opus, MP4/AAC or Ogg/Opus, up to 5 MiB and 5 minutes',
+    );
+  }
+}
+
 export {
+  InvalidVoiceAudioError,
   CannotCreateChatWithSelfError,
   ChatNotFoundError,
   ChatParticipantNotFoundError,
