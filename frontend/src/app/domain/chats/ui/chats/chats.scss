@@ -1,9 +1,4 @@
 :host {
-  --chat-surface: var(--bg-page);
-  --chat-raised: var(--bg-surface-raised);
-  --chat-text: var(--text-primary);
-  --chat-muted: var(--text-muted);
-  --chat-accent: var(--accent-color);
   display: block;
   height: 100%;
   color: var(--chat-text);

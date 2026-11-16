@@ -57,6 +57,11 @@
   --overlay-image: rgba(8, 14, 22, 0.96);
   --overlay-image-meta: rgba(0, 0, 0, 0.53);
   --scrollbar-thumb: #364553;
+  --chat-surface: var(--bg-page);
+  --chat-raised: var(--bg-surface-raised);
+  --chat-text: var(--text-primary);
+  --chat-muted: var(--text-muted);
+  --chat-accent: var(--accent-color);
 }
 
 :root[data-theme='light'] {
