@@ -1,3 +1,7 @@
+import {
+  RateLimit,
+  RateLimitPeriod,
+} from '../../../../core/rate-limit/rate-limit.decorator.js';
 import { ApiServiceUnavailableResponse } from '@nestjs/swagger';
 import {
   SendAttachmentDto,
@@ -94,6 +98,7 @@ class ChatsController {
   constructor(private readonly chats: ChatsService) {}
 
   @Post()
+  @RateLimit(30, RateLimitPeriod.MINUTE)
   @ApiOperation({
     summary: 'Create a private chat or return the existing one',
   })
@@ -194,6 +199,7 @@ class ChatsController {
 
   @Get(':chatId/media')
   @UseGuards(ChatMemberGuard)
+  @RateLimit(60, RateLimitPeriod.MINUTE)
   @ApiOperation({
     summary: 'Count available attachments in this chat by category',
   })
@@ -227,6 +233,7 @@ class ChatsController {
 
   @Post(':chatId/messages')
   @UseGuards(ChatMemberGuard)
+  @RateLimit(90, RateLimitPeriod.MINUTE)
   @ApiOperation({ summary: 'Send a message to a private chat' })
   @ApiParam({
     name: 'chatId',
@@ -259,6 +266,7 @@ class ChatsController {
 
   @Post(':chatId/attachments')
   @UseGuards(ChatMemberGuard)
+  @RateLimit(20, RateLimitPeriod.MINUTE)
   @ApiOperation({ summary: 'Send an image or file up to 5 MiB' })
   @ApiCreatedResponse({ type: SendMessageResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid file or filename.' })
@@ -280,6 +288,7 @@ class ChatsController {
 
   @Post(':chatId/voice')
   @UseGuards(ChatMemberGuard)
+  @RateLimit(12, RateLimitPeriod.MINUTE)
   @ApiOperation({ summary: 'Send a voice recording up to 5 MiB and 5 minutes' })
   @ApiCreatedResponse({ type: SendMessageResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid audio, format or duration.' })
@@ -301,6 +310,7 @@ class ChatsController {
 
   @Get(':chatId/messages/:messageId/attachment')
   @UseGuards(ChatMemberGuard)
+  @RateLimit(180, RateLimitPeriod.MINUTE)
   @ApiOperation({ summary: 'Download an attachment as base64 (members only)' })
   @ApiOkResponse({ type: AttachmentResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid ID.' })
@@ -389,6 +399,7 @@ class ChatsController {
 
   @Get(':chatId/messages')
   @UseGuards(ChatMemberGuard)
+  @RateLimit(240, RateLimitPeriod.MINUTE)
   @ApiOperation({
     summary: 'Get newest chat messages and a cursor for older history',
   })

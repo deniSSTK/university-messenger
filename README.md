@@ -364,9 +364,29 @@ npm test -- --watch=false
 Frontend tests mock HTTP requests and do not require PostgreSQL. Use the documented Node.js version:
 Node.js `22.19.0` is below the Angular CLI minimum and cannot run the frontend build or test commands.
 
+## API rate limits
+
+`@RateLimit(count, RateLimitPeriod.MINUTE)` sets a fixed window per endpoint and authenticated user. Public auth endpoints use the client IP, grouping IPv6 clients by /64. A rejected request returns HTTP 429 and `Retry-After` in seconds.
+
+| Endpoint | Requests per minute |
+| --- | ---: |
+| Register / log in / refresh | 10 / 15 / 60 |
+| Update profile / search users | 12 / 90 |
+| Open chat / count shared media | 30 / 60 |
+| Send text / upload file / send voice | 90 / 20 / 12 |
+| Download attachment / read message history | 180 / 240 |
+
+The in-memory store applies per backend process and resets on a restart. `RATE_LIMIT_MAX_CLIENTS` defaults to 2048 identities per endpoint. At capacity, new identities receive 429 until entries expire. Use a shared store before running multiple replicas if a deployment-wide quota is required.
+
+`TRUST_PROXY_HOPS` defaults to 0 for direct access. The production Compose configurations default to 1 because the API is reachable externally only through Caddy. Keep the API port unpublished with this setting. WebSocket clients send authentication and typing events. Message creation uses the HTTP routes above.
+
 ## S3 Object Storage
 
-New attachments and avatars are uploaded to private S3. PostgreSQL holds `Message.fileKey` and `User.avatarKey`, plus metadata. Failed database writes trigger object cleanup. Attachments download through the existing authenticated API, which verifies chat membership before reading S3. Avatar responses contain temporary signed GET URLs; internal object keys are not exposed as response fields. Signed avatar links expire after `S3_SIGNED_URL_TTL_SECONDS` (default 900 seconds); they are refreshed when profile/chat data is loaded again.
+Messages reference an optional `Attachment`, with `AttachmentVoice` holding duration and waveform for recordings. The migration copies and checks the old columns in one transaction before removing them. It keeps `Message.voiceRequestId`, stored S3 keys and any remaining legacy bytes. The authenticated HTTP response remains unchanged.
+
+Before upgrading an existing deployment, stop the old backend, apply the migrations with the new image, run the legacy media migration if needed, and start the new backend. The AWS workflow already follows this order. For manual Compose upgrades, use the same sequence. Rolling back to a backend that reads the old columns requires restoring a compatible database backup.
+
+New attachments and avatars are uploaded to private S3. PostgreSQL holds `Attachment.fileKey` and `User.avatarKey`, plus metadata. Failed database writes trigger object cleanup. Attachments download through the existing authenticated API, which verifies chat membership before reading S3. Avatar responses contain temporary signed GET URLs; internal object keys are not exposed as response fields. Signed avatar links expire after `S3_SIGNED_URL_TTL_SECONDS` (default 900 seconds); they are refreshed when profile/chat data is loaded again.
 
 Configure `S3_BUCKET`, `S3_REGION`, and optionally `S3_SIGNED_URL_TTL_SECONDS` in the backend environment. A bucket must be explicitly supplied in production. The backend uses the [AWS SDK default credential chain](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/setting-credentials-node.html): locally use an AWS profile or standard AWS credential environment variables; on EC2 assign an instance IAM role. No AWS credentials are sent to Angular or committed. A private bucket needs no browser upload CORS policy because uploads/downloads pass through the backend.
 

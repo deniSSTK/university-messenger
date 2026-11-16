@@ -1,3 +1,7 @@
+import {
+  RateLimit,
+  RateLimitPeriod,
+} from '../../../../core/rate-limit/rate-limit.decorator.js';
 import { ApiServiceUnavailableResponse } from '@nestjs/swagger';
 import {
   Body,
@@ -52,6 +56,7 @@ class AuthController {
   ) {}
 
   @Post('register')
+  @RateLimit(10, RateLimitPeriod.MINUTE)
   @ApiOperation({
     summary: 'Register a user and create a session',
     description:
@@ -78,6 +83,7 @@ class AuthController {
   }
 
   @Post('login')
+  @RateLimit(15, RateLimitPeriod.MINUTE)
   @ApiOperation({
     summary: 'Log in and create a session',
     description:
@@ -100,6 +106,7 @@ class AuthController {
   }
 
   @Post('refresh')
+  @RateLimit(60, RateLimitPeriod.MINUTE)
   @ApiOperation({
     summary: 'Rotate the refresh token and issue an access token',
     description:

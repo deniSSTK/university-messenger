@@ -1,3 +1,4 @@
+import { hash } from 'argon2';
 import { WebSocketEventType } from '@university-messenger/events';
 import { MediaMigration } from '../src/modules/media/service/migrate-media.js';
 import { PrismaLegacyMediaRepository } from '../src/modules/media/repository/prisma-legacy-media.repository.js';
@@ -17,6 +18,9 @@ import { Pool } from 'pg';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import type { Response } from 'supertest';
+import { MemoryRateLimitStore } from '../src/core/rate-limit/memory-rate-limit.store.js';
+import { RATE_LIMIT_STORE } from '../src/core/rate-limit/rate-limit.store.js';
+import type { RateLimitStore } from '../src/core/rate-limit/rate-limit.store.js';
 import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/configure-app.js';
 import { PrismaClient } from '../src/generated/prisma/client.js';
@@ -103,6 +107,10 @@ function responseBody<T>(response: Response): T {
 describeDatabase('Chats API (PostgreSQL)', () => {
   let app: INestApplication<App>;
   let pool: Pool;
+  let rateLimit = new MemoryRateLimitStore(2048);
+  const rateLimitStore: RateLimitStore = {
+    consume: (policy, identity) => rateLimit.consume(policy, identity),
+  };
   let prisma: PrismaClient;
   const storage = new MemoryObjectStorage();
   const schema = `chats_test_${randomUUID().replaceAll('-', '')}`;
@@ -163,6 +171,8 @@ describeDatabase('Chats API (PostgreSQL)', () => {
     const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(OBJECT_STORAGE)
       .useValue(storage)
+      .overrideProvider(RATE_LIMIT_STORE)
+      .useValue(rateLimitStore)
       .overrideProvider(PrismaService)
       .useValue(prisma)
       .compile();
@@ -172,7 +182,9 @@ describeDatabase('Chats API (PostgreSQL)', () => {
   }, 30000);
 
   beforeEach(async () => {
+    rateLimit = new MemoryRateLimitStore(2048);
     await prisma.message.deleteMany();
+    await prisma.attachment.deleteMany();
     await prisma.chatMember.deleteMany();
     await prisma.chat.deleteMany();
     await prisma.userSession.deleteMany();
@@ -782,13 +794,18 @@ describeDatabase('Chats API (PostgreSQL)', () => {
     );
     const file = await prisma.message.create({
       data: {
-        chatId: chat.id,
-        senderId: alice.user.id,
+        chat: { connect: { id: chat.id } },
+        sender: { connect: { id: alice.user.id } },
         text: 'old.txt',
-        fileName: 'old.txt',
-        fileType: 'text/plain',
-        fileSize: 3,
-        fileData: new Uint8Array([65, 66, 67]),
+        attachment: {
+          create: {
+            type: 'FILE',
+            fileName: 'old.txt',
+            fileType: 'text/plain',
+            fileSize: 3,
+            fileData: new Uint8Array([65, 66, 67]),
+          },
+        },
       },
     });
     const avatar =
@@ -810,8 +827,8 @@ describeDatabase('Chats API (PostgreSQL)', () => {
       attachments: 0,
       avatars: 0,
     });
-    const moved = await prisma.message.findUniqueOrThrow({
-      where: { id: file.id },
+    const moved = await prisma.attachment.findUniqueOrThrow({
+      where: { id: file.attachmentId! },
     });
     expect(moved.fileData).toBeNull();
     expect(moved.fileKey).toBeTruthy();
@@ -883,9 +900,13 @@ describeDatabase('Chats API (PostgreSQL)', () => {
     expect(message.attachment.voice.waveform).toHaveLength(80);
     expect(Math.max(...message.attachment.voice.waveform)).toBe(100);
     expect(storage.objects.size).toBe(before + 1);
-    const stored = await prisma.message.findUniqueOrThrow({
-      where: { id: message.id },
+    const stored = await prisma.attachment.findFirstOrThrow({
+      where: { message: { id: message.id } },
+      include: { voice: true },
     });
+    expect(stored.type).toBe('VOICE');
+    expect(stored.voice).toMatchObject(message.attachment.voice);
+    expect(await prisma.attachment.count({ where: { type: 'VOICE' } })).toBe(1);
     expect(stored.fileData).toBeNull();
     expect(storage.objects.has(stored.fileKey!)).toBe(true);
     expect(await prisma.message.count({ where: { chatId: chat.id } })).toBe(1);
@@ -971,8 +992,8 @@ describeDatabase('Chats API (PostgreSQL)', () => {
     await send('animation.gif', 'image/gif');
     const textFile = await send('notes.txt', 'text/plain');
     const legacy = await send('legacy.dat', 'application/octet-stream');
-    await prisma.message.update({
-      where: { id: legacy.id },
+    await prisma.attachment.updateMany({
+      where: { message: { id: legacy.id } },
       data: { fileType: null },
     });
     await api
@@ -1261,6 +1282,197 @@ describeDatabase('Chats API (PostgreSQL)', () => {
       }
     }
   }, 25_000);
+
+  it('verifies attachment backfill before removing legacy columns', async () => {
+    const legacySchema = `${schema}_attachments`;
+    const connection = await pool.connect();
+    const [firstId, secondId] = [randomUUID(), randomUUID()].sort();
+    const chatId = randomUUID();
+    const fileId = randomUUID();
+    const voiceId = randomUUID();
+    const textId = randomUUID();
+    const requestId = randomUUID();
+    const migrationsPath = join(process.cwd(), 'prisma/migrations');
+    const password = 'migration-fixture-password';
+    const voiceKey = `attachments/${chatId}/prior-voice`;
+    let migrated: PrismaClient | undefined;
+    let migratedApp: INestApplication<App> | undefined;
+    const target = '20261116000100_normalize_message_attachments';
+
+    try {
+      await connection.query(`CREATE SCHEMA "${legacySchema}"`);
+      await connection.query(`SET search_path TO "${legacySchema}"`);
+      const directories = await readdir(migrationsPath, {
+        withFileTypes: true,
+      });
+
+      for (const directory of directories
+        .filter((entry) => entry.isDirectory() && entry.name < target)
+        .map((entry) => entry.name)
+        .sort()) {
+        await connection.query(
+          await readFile(
+            join(migrationsPath, directory, 'migration.sql'),
+            'utf8',
+          ),
+        );
+      }
+
+      await connection.query(
+        `INSERT INTO "User" ("id", "email", "username", "displayName", "passwordHash", "updatedAt")
+         VALUES ($1, 'first@example.com', 'first', 'First', $3, now()),
+                ($2, 'second@example.com', 'second', 'Second', 'test', now())`,
+        [firstId, secondId, await hash(password)],
+      );
+      await connection.query(
+        `INSERT INTO "Chat" ("id", "privateUserAId", "privateUserBId", "updatedAt")
+         VALUES ($1, $2, $3, now())`,
+        [chatId, firstId, secondId],
+      );
+      await connection.query(
+        'INSERT INTO "ChatMember" ("chatId", "userId") VALUES ($1, $2), ($1, $3)',
+        [chatId, firstId, secondId],
+      );
+      await connection.query(
+        `INSERT INTO "Message" ("id", "chatId", "senderId", "text", "fileName", "fileType", "fileSize", "fileData", "fileKey", "voiceRequestId", "voiceDurationMs", "voiceWaveform", "deletedAt")
+         VALUES ($1, $4, $5, 'Legacy file', 'old.txt', 'text/plain', 3, decode('414243', 'hex'), NULL, NULL, NULL, '{}', NULL),
+                ($2, $4, $5, 'Legacy voice', 'voice.webm', 'audio/webm', 500, NULL, $7, $6, 1200, '{0,101,100}', NULL),
+                ($3, $4, $5, 'Text only', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{}', now())`,
+        [fileId, voiceId, textId, chatId, firstId, requestId, voiceKey],
+      );
+
+      const migration = await readFile(
+        join(migrationsPath, target, 'migration.sql'),
+        'utf8',
+      );
+      await expect(connection.query(migration)).rejects.toThrow(
+        'AttachmentVoice_waveform_check',
+      );
+      await connection.query('ROLLBACK');
+      const invalid = await connection.query<{ voiceWaveform: number[] }>(
+        'SELECT "voiceWaveform" FROM "Message" WHERE "id" = $1',
+        [voiceId],
+      );
+      expect(invalid.rows[0].voiceWaveform).toEqual([0, 101, 100]);
+      await connection.query(
+        'UPDATE "Message" SET "voiceWaveform" = $2 WHERE "id" = $1',
+        [voiceId, [0, 40, 100]],
+      );
+      await connection.query(migration);
+
+      const result = await connection.query(
+        `SELECT message."id", message."attachmentId", message."voiceRequestId",
+                message."deletedAt" IS NOT NULL AS deleted, attachment."type",
+                attachment."fileName", attachment."fileType", attachment."fileSize", attachment."fileKey",
+                encode(attachment."fileData", 'hex') AS bytes, voice."durationMs", voice."waveform"
+         FROM "Message" AS message
+         LEFT JOIN "Attachment" AS attachment ON attachment."id" = message."attachmentId"
+         LEFT JOIN "AttachmentVoice" AS voice ON voice."attachmentId" = attachment."id"`,
+      );
+      expect(result.rows).toHaveLength(3);
+      expect(result.rows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: textId, attachmentId: null }),
+          expect.objectContaining({
+            id: fileId,
+            attachmentId: fileId,
+            type: 'FILE',
+            fileName: 'old.txt',
+            fileType: 'text/plain',
+            fileSize: 3,
+            bytes: '414243',
+          }),
+          expect.objectContaining({
+            id: voiceId,
+            attachmentId: voiceId,
+            type: 'VOICE',
+            deleted: false,
+            voiceRequestId: requestId,
+            fileKey: voiceKey,
+            durationMs: 1200,
+            waveform: [0, 40, 100],
+            bytes: null,
+          }),
+        ]),
+      );
+      await expect(
+        connection.query('SELECT "fileKey" FROM "Message"'),
+      ).rejects.toThrow('does not exist');
+      migrated = new PrismaClient({
+        adapter: new PrismaPg(
+          {
+            connectionString: process.env.TEST_DATABASE_URL,
+            options: `-c search_path=${legacySchema}`,
+          },
+          { schema: legacySchema },
+        ),
+      });
+      const module = await Test.createTestingModule({ imports: [AppModule] })
+        .overrideProvider(PrismaService)
+        .useValue(migrated)
+        .overrideProvider(OBJECT_STORAGE)
+        .useValue(storage)
+        .compile();
+      migratedApp = module.createNestApplication();
+      configureApp(migratedApp);
+      await migratedApp.init();
+      await storage.put({
+        key: voiceKey,
+        bytes: Buffer.from('pre-existing S3 voice'),
+        mediaType: 'audio/webm',
+      });
+      const migratedApi = request(migratedApp.getHttpServer());
+      const login = responseBody<AuthResponse>(
+        await migratedApi
+          .post('/auth/login')
+          .send({ email: 'first@example.com', password })
+          .expect(200),
+      );
+      const authorization = `Bearer ${login.accessToken}`;
+      const migratedHistory = responseBody<MessageHistoryResponse>(
+        await migratedApi
+          .get(`/chats/${chatId}/messages`)
+          .set('Authorization', authorization)
+          .expect(200),
+      );
+      expect(migratedHistory.items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: voiceId,
+            attachment: {
+              name: 'voice.webm',
+              mediaType: 'audio/webm',
+              size: 500,
+              voice: { durationMs: 1200, waveform: [0, 40, 100] },
+            },
+          }),
+        ]),
+      );
+      await migratedApi
+        .get(`/chats/${chatId}/messages/${fileId}/attachment`)
+        .set('Authorization', authorization)
+        .expect(200, {
+          name: 'old.txt',
+          mediaType: 'text/plain',
+          content: 'QUJD',
+        });
+      await migratedApi
+        .get(`/chats/${chatId}/messages/${voiceId}/attachment`)
+        .set('Authorization', authorization)
+        .expect(200, {
+          name: 'voice.webm',
+          mediaType: 'audio/webm',
+          content: Buffer.from('pre-existing S3 voice').toString('base64'),
+        });
+    } finally {
+      await migratedApp?.close();
+      await migrated?.$disconnect();
+      await connection.query('ROLLBACK');
+      await connection.query('RESET search_path');
+      await connection.query(`DROP SCHEMA IF EXISTS "${legacySchema}" CASCADE`);
+      connection.release();
+    }
+  }, 15_000);
 
   it('backfills the canonical pair without changing existing chats or messages', async () => {
     const legacySchema = `${schema}_legacy`;

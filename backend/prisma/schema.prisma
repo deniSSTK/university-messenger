@@ -71,27 +71,49 @@ model ChatMember {
 }
 
 model Message {
-  id              String    @id @default(uuid()) @db.Uuid
-  chatId          String    @db.Uuid
-  senderId        String    @db.Uuid
-  fileName        String?
-  fileType        String?
-  fileSize        Int?
-  fileData        Bytes?
-  fileKey         String?
-  voiceRequestId  String?   @db.Uuid
-  voiceDurationMs Int?
-  voiceWaveform   Int[]     @default([])
-  text            String
-  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
-  editedAt        DateTime? @db.Timestamptz(3)
-  readAt          DateTime? @db.Timestamptz(3)
-  deletedAt       DateTime? @db.Timestamptz(3)
+  id             String    @id @default(uuid()) @db.Uuid
+  chatId         String    @db.Uuid
+  senderId       String    @db.Uuid
+  attachmentId   String?   @unique @db.Uuid
+  voiceRequestId String?   @db.Uuid
+  text           String
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  editedAt       DateTime? @db.Timestamptz(3)
+  readAt         DateTime? @db.Timestamptz(3)
+  deletedAt      DateTime? @db.Timestamptz(3)
 
-  chat   Chat @relation(fields: [chatId], references: [id], onDelete: Restrict)
-  sender User @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  chat       Chat        @relation(fields: [chatId], references: [id], onDelete: Restrict)
+  sender     User        @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  attachment Attachment? @relation(fields: [attachmentId], references: [id], onDelete: Restrict)
 
   @@unique([chatId, senderId, voiceRequestId])
   @@index([chatId, createdAt, id])
   @@index([senderId])
+}
+
+enum AttachmentType {
+  FILE
+  VOICE
+}
+
+model Attachment {
+  id        String         @id @default(uuid()) @db.Uuid
+  type      AttachmentType
+  fileName  String?
+  fileType  String?
+  fileSize  Int?
+  fileData  Bytes?
+  fileKey   String?
+  createdAt DateTime       @default(now()) @db.Timestamptz(3)
+
+  message Message?
+  voice   AttachmentVoice?
+}
+
+model AttachmentVoice {
+  attachmentId String @id @db.Uuid
+  durationMs   Int
+  waveform     Int[]  @default([])
+
+  attachment Attachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
 }

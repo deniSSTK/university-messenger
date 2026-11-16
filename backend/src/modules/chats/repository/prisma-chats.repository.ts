@@ -25,24 +25,23 @@ import {
 } from '../domain/shared-media.js';
 import type { MediaCategory, MediaCounts } from '../domain/shared-media.js';
 
-const sharedAttachment: Prisma.MessageWhereInput = {
-  deletedAt: null,
+const sharedAttachment: Prisma.AttachmentWhereInput = {
   fileName: { not: null },
   OR: [{ fileKey: { not: null } }, { fileData: { not: null } }],
 };
-const photos: Prisma.MessageWhereInput = {
+const photos: Prisma.AttachmentWhereInput = {
   fileType: { in: PHOTO_TYPES, mode: 'insensitive' },
 };
-const gifs: Prisma.MessageWhereInput = {
+const gifs: Prisma.AttachmentWhereInput = {
   fileType: { equals: GIF_TYPE, mode: 'insensitive' },
 };
-const videos: Prisma.MessageWhereInput = {
+const videos: Prisma.AttachmentWhereInput = {
   fileType: { startsWith: 'video/', mode: 'insensitive' },
 };
-const audio: Prisma.MessageWhereInput = {
+const audio: Prisma.AttachmentWhereInput = {
   fileType: { startsWith: 'audio/', mode: 'insensitive' },
 };
-const mediaFilters: Record<MediaCategory, Prisma.MessageWhereInput> = {
+const mediaFilters: Record<MediaCategory, Prisma.AttachmentWhereInput> = {
   photos,
   gifs,
   videos,
@@ -68,11 +67,14 @@ const messageSelect = {
   editedAt: true,
   deletedAt: true,
   readAt: true,
-  fileName: true,
-  voiceDurationMs: true,
-  voiceWaveform: true,
-  fileType: true,
-  fileSize: true,
+  attachment: {
+    select: {
+      fileName: true,
+      fileType: true,
+      fileSize: true,
+      voice: { select: { durationMs: true, waveform: true } },
+    },
+  },
   sender: { select: participantSelect },
 } as const;
 
@@ -104,6 +106,8 @@ type ChatPageRow = {
 function mapMessage(
   message: Prisma.MessageGetPayload<{ select: typeof messageSelect }>,
 ): ChatMessage {
+  const file = message.attachment;
+
   return {
     id: message.id,
     chatId: message.chatId,
@@ -113,19 +117,12 @@ function mapMessage(
     createdAt: message.createdAt,
     editedAt: message.editedAt,
     readAt: message.readAt,
-    attachment: message.fileName
+    attachment: file?.fileName
       ? {
-          ...(message.voiceDurationMs === null
-            ? {}
-            : {
-                voice: {
-                  durationMs: message.voiceDurationMs,
-                  waveform: message.voiceWaveform,
-                },
-              }),
-          name: message.fileName,
-          mediaType: message.fileType ?? 'application/octet-stream',
-          size: message.fileSize ?? 0,
+          name: file.fileName,
+          mediaType: file.fileType ?? 'application/octet-stream',
+          size: file.fileSize ?? 0,
+          ...(file.voice ? { voice: file.voice } : {}),
         }
       : null,
   };
@@ -479,24 +476,25 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
 
       const message = await transaction.message.create({
         data: {
-          chatId: input.chatId,
-          senderId: input.senderId,
+          chat: { connect: { id: input.chatId } },
+          sender: { connect: { id: input.senderId } },
           text: input.text,
           ...(input.file
             ? {
-                fileName: input.file.name,
-                fileType: input.file.mediaType,
-                fileSize: input.file.size,
-                fileKey: input.file.key,
+                attachment: {
+                  create: {
+                    type: voice ? ('VOICE' as const) : ('FILE' as const),
+                    fileName: input.file.name,
+                    fileType: input.file.mediaType,
+                    fileSize: input.file.size,
+                    fileKey: input.file.key,
+                    createdAt: activity.activityAt,
+                    ...(voice ? { voice: { create: voice.voice } } : {}),
+                  },
+                },
               }
             : {}),
-          ...(voice
-            ? {
-                voiceRequestId: voice.id,
-                voiceDurationMs: voice.voice.durationMs,
-                voiceWaveform: voice.voice.waveform,
-              }
-            : {}),
+          ...(voice ? { voiceRequestId: voice.id } : {}),
           createdAt: activity.activityAt,
         },
         select: messageSelect,
@@ -528,18 +526,28 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
     const visible = await visibleHistory(this.prisma, chatId, userId);
     const message = await this.prisma.message.findFirst({
       where: { id: messageId, chatId, deletedAt: null, ...visible },
-      select: { fileName: true, fileType: true, fileData: true, fileKey: true },
+      select: {
+        attachment: {
+          select: {
+            fileName: true,
+            fileType: true,
+            fileData: true,
+            fileKey: true,
+          },
+        },
+      },
     });
+    const file = message?.attachment;
 
-    if (!message?.fileName || (!message.fileData && !message.fileKey)) {
+    if (!file?.fileName || (!file.fileData && !file.fileKey)) {
       return null;
     }
 
     return {
-      name: message.fileName,
-      mediaType: message.fileType ?? 'application/octet-stream',
-      key: message.fileKey,
-      legacyBytes: message.fileData,
+      name: file.fileName,
+      mediaType: file.fileType ?? 'application/octet-stream',
+      key: file.fileKey,
+      legacyBytes: file.fileData,
     };
   }
 
@@ -621,29 +629,18 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
   }
 
   async countMedia(chatId: string, userId: string): Promise<MediaCounts> {
-    const { rows, voiceCount } = await this.prisma.$transaction(
+    const rows = await this.prisma.$transaction(
       async (transaction) => {
         const visible = await visibleHistory(transaction, chatId, userId);
-        const rows = await transaction.message.groupBy({
-          by: ['fileType'],
+
+        return transaction.attachment.groupBy({
+          by: ['type', 'fileType'],
           where: {
-            chatId,
             ...sharedAttachment,
-            ...visible,
-            voiceDurationMs: null,
+            message: { chatId, deletedAt: null, ...visible },
           },
           _count: { _all: true },
         });
-        const voiceCount = await transaction.message.count({
-          where: {
-            chatId,
-            ...sharedAttachment,
-            ...visible,
-            voiceDurationMs: { not: null },
-          },
-        });
-
-        return { rows, voiceCount };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
@@ -652,12 +649,14 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
       videos: 0,
       files: 0,
       audio: 0,
-      voice: voiceCount,
+      voice: 0,
       gifs: 0,
     };
 
     for (const row of rows) {
-      counts[mediaCategory(row.fileType)] += row._count._all;
+      const category =
+        row.type === 'VOICE' ? 'voice' : mediaCategory(row.fileType);
+      counts[category] += row._count._all;
     }
 
     return counts;
@@ -690,8 +689,10 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
         ...cursorFilter,
         ...(category
           ? {
-              AND: [sharedAttachment, mediaFilters[category]],
-              voiceDurationMs: category === 'voice' ? { not: null } : null,
+              attachment: {
+                AND: [sharedAttachment, mediaFilters[category]],
+                type: category === 'voice' ? 'VOICE' : 'FILE',
+              },
             }
           : {}),
       },
