@@ -178,7 +178,7 @@ describeDatabase('Chats API (PostgreSQL)', () => {
       .compile();
     app = module.createNestApplication();
     configureApp(app);
-    await app.init();
+    await app.listen(0, '127.0.0.1');
   }, 30000);
 
   beforeEach(async () => {
@@ -1174,7 +1174,6 @@ describeDatabase('Chats API (PostgreSQL)', () => {
         .send({ recipientId: bob.user.id })
         .expect(201),
     );
-    await app.listen(0, '127.0.0.1');
     const url = `${(await app.getUrl()).replace('http:', 'ws:')}/events`;
     const clients: WebSocket[] = [];
     const next = (

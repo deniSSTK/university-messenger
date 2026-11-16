@@ -120,7 +120,7 @@ describeDatabase('Auth API (PostgreSQL)', () => {
       .compile();
     app = module.createNestApplication();
     configureApp(app);
-    await app.init();
+    await app.listen(0, '127.0.0.1');
     jwt = app.get(JwtService);
   }, 30000);
 
