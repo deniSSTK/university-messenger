@@ -13,7 +13,12 @@ interface ChatMessageHttpResponse {
   createdAt: string;
   editedAt: string | null;
   readAt?: string | null;
-  attachment?: { name: string; mediaType: string; size: number } | null;
+  attachment?: {
+    name: string;
+    mediaType: string;
+    size: number;
+    voice?: { durationMs: number; waveform: number[] };
+  } | null;
 }
 interface ChatDetailsHttpResponse {
   id: string;
@@ -41,7 +46,20 @@ interface SendMessageHttpRequest {
   text: string;
 }
 
+type SendVoiceHttpRequest = { id: string; mediaType: string; content: string };
+
+type SharedMediaHttpResponse = {
+  photos: number;
+  videos: number;
+  files: number;
+  audio: number;
+  voice: number;
+  gifs: number;
+};
+
 export type {
+  SendVoiceHttpRequest,
+  SharedMediaHttpResponse,
   ChatPersonHttpResponse,
   ChatMessageHttpResponse,
   ChatDetailsHttpResponse,

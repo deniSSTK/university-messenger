@@ -128,9 +128,19 @@ body {
     color 0.2s ease;
 }
 
+.loading-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 input:focus-visible,
 button:focus-visible,
 a:focus-visible {
   outline: 2px solid var(--accent-outline);
   outline-offset: 3px;
+}
+
+html:has(dialog[open]) {
+  overflow: hidden;
 }

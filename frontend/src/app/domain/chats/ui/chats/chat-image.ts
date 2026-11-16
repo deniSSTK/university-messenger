@@ -1,49 +1,69 @@
-import { Component, effect, inject, input, output, signal } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  DestroyRef,
+  effect,
+  ElementRef,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 import { ChatService } from '../../service/chats';
-import { IconClose } from '../../../../shared/ui/icons/close';
-import { IconDownload } from '../../../../shared/ui/icons/download';
+import { ImageViewer } from '../../../../shared/ui/dialog/image-viewer';
 import { Spinner } from '../../../../shared/ui/spinner/spinner';
 
 @Component({
   selector: 'app-chat-image',
-  imports: [IconClose, IconDownload, Spinner],
+  imports: [ImageViewer, Spinner],
+  host: { '[class.gallery-tile]': 'gallery()' },
   template: `
     @if (!failed() && url(); as source) {
       <button
         class="thumbnail"
         type="button"
         [attr.aria-label]="'Відкрити ' + name()"
-        (click)="lightbox.showModal()"
+        (click)="viewerOpen.set(true)"
       >
         <img [src]="source" [alt]="name()" (load)="imageLoaded.emit()" (error)="failed.set(true)" />
       </button>
-      <dialog #lightbox (click)="dismiss($event, lightbox)">
-        <div class="viewer-toolbar">
-          <span>{{ name() }}</span>
-          <a [href]="source" [download]="name()" aria-label="Завантажити зображення">
-            <app-icon-download />
-          </a>
-          <button type="button" aria-label="Закрити зображення" (click)="lightbox.close()">
-            <app-icon-close />
-          </button>
-        </div>
-        <img [src]="source" [alt]="name()" />
-      </dialog>
+      @if (viewerOpen()) {
+        <app-image-viewer
+          [src]="source"
+          [name]="name()"
+          [downloadable]="true"
+          (closed)="viewerOpen.set(false)"
+        />
+      }
     } @else if (failed()) {
-      <button class="image-status" type="button" (click)="retry.update(increment)">
-        Не вдалося завантажити фото. Повторити
+      <button
+        class="image-status"
+        type="button"
+        [attr.aria-label]="'Повторити завантаження ' + name()"
+        (click)="retry.update(increment)"
+      >
+        {{ gallery() ? 'Повторити' : 'Не вдалося завантажити фото. Повторити' }}
       </button>
     } @else {
-      <div class="image-status" role="status"><app-spinner />Завантажуємо фото…</div>
+      <div class="image-status loading-status" role="status">
+        @if (!gallery() || visible()) {
+          <app-spinner />
+        }
+        <span [class.sr-only]="gallery()">Завантажуємо фото…</span>
+      </div>
     }
   `,
   styleUrl: './chat-image.scss',
 })
 class ChatImage {
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly service = inject(ChatService);
   readonly chatId = input.required<string>();
   readonly messageId = input.required<string>();
   readonly name = input.required<string>();
+  readonly gallery = input(false);
+  readonly visible = signal(false);
+  readonly viewerOpen = signal(false);
   readonly url = signal<string | null>(null);
   readonly failed = signal(false);
   readonly retry = signal(0);
@@ -51,7 +71,32 @@ class ChatImage {
   readonly increment = (value: number) => value + 1;
 
   constructor() {
+    const destroy = inject(DestroyRef);
+    afterNextRender(() => {
+      if (!this.gallery()) {
+        return;
+      }
+
+      if (typeof IntersectionObserver === 'undefined') {
+        this.visible.set(true);
+        return;
+      }
+
+      const observer = new IntersectionObserver((entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          this.visible.set(true);
+          observer.disconnect();
+        }
+      });
+      observer.observe(this.host.nativeElement);
+      destroy.onDestroy(() => observer.disconnect());
+    });
+
     effect((onCleanup) => {
+      if (this.gallery() && !this.visible()) {
+        return;
+      }
+
       const chatId = this.chatId();
       const messageId = this.messageId();
       this.retry();
@@ -86,12 +131,6 @@ class ChatImage {
         }
       });
     });
-  }
-
-  dismiss(event: MouseEvent, dialog: HTMLDialogElement): void {
-    if (event.target === dialog) {
-      dialog.close();
-    }
   }
 }
 

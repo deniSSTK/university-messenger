@@ -1,6 +1,11 @@
+import {
+  RateLimit,
+  RateLimitPeriod,
+} from '../../../../core/rate-limit/rate-limit.decorator.js';
 import { ApiServiceUnavailableResponse } from '@nestjs/swagger';
 import {
   SendAttachmentDto,
+  SendVoiceDto,
   AttachmentResponseDto,
 } from './dto/attachment.dto.js';
 import { MessageParamsDto, ReadMessagesDto } from './dto/message-params.dto.js';
@@ -60,6 +65,7 @@ import {
   ListChatsResponseDto,
   ListMessagesResponseDto,
   SendMessageResponseDto,
+  SharedMediaCountsDto,
 } from './dto/chats-response.dto.js';
 import { ListChatsRequestDto } from './dto/list-chats-request.dto.js';
 import { ListMessagesRequestDto } from './dto/list-messages-request.dto.js';
@@ -92,6 +98,7 @@ class ChatsController {
   constructor(private readonly chats: ChatsService) {}
 
   @Post()
+  @RateLimit(30, RateLimitPeriod.MINUTE)
   @ApiOperation({
     summary: 'Create a private chat or return the existing one',
   })
@@ -190,8 +197,43 @@ class ChatsController {
     };
   }
 
+  @Get(':chatId/media')
+  @UseGuards(ChatMemberGuard)
+  @RateLimit(60, RateLimitPeriod.MINUTE)
+  @ApiOperation({
+    summary: 'Count available attachments in this chat by category',
+  })
+  @ApiOkResponse({ type: SharedMediaCountsDto })
+  @ApiBadRequestResponse({ description: 'Invalid chat ID.' })
+  @ApiUnauthorizedResponse({ description: 'Inactive session.' })
+  @ApiNotFoundResponse({ description: 'Chat not found.' })
+  countMedia(
+    @Param() params: ChatIdParamsDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<SharedMediaCountsDto> {
+    return this.chats.countMedia(params.chatId, request.auth.user.id);
+  }
+
+  @Delete(':chatId/visibility')
+  @HttpCode(204)
+  @UseGuards(ChatMemberGuard)
+  @ApiOperation({
+    summary: 'Hide the chat and clear history for the current user',
+  })
+  @ApiNoContentResponse()
+  @ApiBadRequestResponse({ description: 'Invalid chat ID.' })
+  @ApiUnauthorizedResponse({ description: 'Inactive session.' })
+  @ApiNotFoundResponse({ description: 'Chat not found.' })
+  hideChat(
+    @Param() params: ChatIdParamsDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<void> {
+    return this.chats.hideChat(params.chatId, request.auth.user.id);
+  }
+
   @Post(':chatId/messages')
   @UseGuards(ChatMemberGuard)
+  @RateLimit(90, RateLimitPeriod.MINUTE)
   @ApiOperation({ summary: 'Send a message to a private chat' })
   @ApiParam({
     name: 'chatId',
@@ -224,6 +266,7 @@ class ChatsController {
 
   @Post(':chatId/attachments')
   @UseGuards(ChatMemberGuard)
+  @RateLimit(20, RateLimitPeriod.MINUTE)
   @ApiOperation({ summary: 'Send an image or file up to 5 MiB' })
   @ApiCreatedResponse({ type: SendMessageResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid file or filename.' })
@@ -243,8 +286,31 @@ class ChatsController {
     });
   }
 
+  @Post(':chatId/voice')
+  @UseGuards(ChatMemberGuard)
+  @RateLimit(12, RateLimitPeriod.MINUTE)
+  @ApiOperation({ summary: 'Send a voice recording up to 5 MiB and 5 minutes' })
+  @ApiCreatedResponse({ type: SendMessageResponseDto })
+  @ApiBadRequestResponse({ description: 'Invalid audio, format or duration.' })
+  @ApiNotFoundResponse({ description: 'Chat or message not found.' })
+  @ApiUnauthorizedResponse({ description: 'Inactive session.' })
+  async sendVoice(
+    @Param() params: ChatIdParamsDto,
+    @Body() dto: SendVoiceDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<SendMessageResponseDto> {
+    return this.chats.sendVoice({
+      id: dto.id.toLowerCase(),
+      chatId: params.chatId,
+      senderId: request.auth.user.id,
+      mediaType: dto.mediaType,
+      bytes: Buffer.from(dto.content, 'base64'),
+    });
+  }
+
   @Get(':chatId/messages/:messageId/attachment')
   @UseGuards(ChatMemberGuard)
+  @RateLimit(180, RateLimitPeriod.MINUTE)
   @ApiOperation({ summary: 'Download an attachment as base64 (members only)' })
   @ApiOkResponse({ type: AttachmentResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid ID.' })
@@ -333,6 +399,7 @@ class ChatsController {
 
   @Get(':chatId/messages')
   @UseGuards(ChatMemberGuard)
+  @RateLimit(240, RateLimitPeriod.MINUTE)
   @ApiOperation({
     summary: 'Get newest chat messages and a cursor for older history',
   })
@@ -372,10 +439,13 @@ class ChatsController {
   async listMessages(
     @Param() params: ChatIdParamsDto,
     @Query() query: ListMessagesRequestDto,
+    @Req() request: AuthenticatedRequest,
   ): Promise<ListMessagesResponseDto> {
     return this.chats.listMessages({
       chatId: params.chatId,
+      userId: request.auth.user.id,
       cursor: query.cursor,
+      ...(query.category ? { mediaCategory: query.category } : {}),
       limit: query.limit,
     });
   }

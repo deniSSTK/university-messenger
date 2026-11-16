@@ -101,7 +101,7 @@
       }
       @if (searching()) {
         @if (searchLoading()) {
-          <p class="status" role="status"><app-spinner />Шукаємо користувачів…</p>
+          <p class="status loading-status" role="status"><app-spinner />Шукаємо користувачів…</p>
         }
         @if (searchError()) {
           <div class="status error" role="alert">
@@ -173,7 +173,7 @@
         }
       } @else {
         @if (listLoading() && chats().length === 0) {
-          <p class="status" role="status"><app-spinner />Завантажуємо чати…</p>
+          <p class="status loading-status" role="status"><app-spinner />Завантажуємо чати…</p>
         }
         @if (listError()) {
           <div class="status error" role="alert">
@@ -225,7 +225,11 @@
                       @if (last.senderId === viewer()?.id) {
                         <span class="sender-prefix">Ви: </span>
                       }
-                      <span class="preview-text">{{ last.attachment?.name ?? last.text }}</span>
+                      <span class="preview-text">{{
+                        last.attachment?.voice
+                          ? 'Голосове повідомлення'
+                          : (last.attachment?.name ?? last.text)
+                      }}</span>
                       @if (chat.unreadCount) {
                         <strong
                           class="unread-badge"
@@ -281,16 +285,30 @@
           <app-icon-back />
         </button>
         @if (active(); as chat) {
-          <app-avatar
+          <button
             class="peer-avatar"
-            [size]="42"
-            [name]="chat.person.displayName"
-            [src]="chat.person.avatarUrl"
-          />
+            type="button"
+            aria-haspopup="dialog"
+            [attr.aria-label]="'Відкрити профіль: ' + chat.person.displayName"
+            (click)="peerProfileOpen.set(true)"
+          >
+            <app-avatar [size]="42" [name]="chat.person.displayName" [src]="chat.person.avatarUrl" />
+          </button>
         }
         <div class="peer">
-          <strong>{{ active()?.person?.displayName ?? 'Діалог' }}</strong
-          ><span>
+          @if (active(); as chat) {
+            <button
+              class="open-peer-profile"
+              type="button"
+              aria-haspopup="dialog"
+              (click)="peerProfileOpen.set(true)"
+            >
+              {{ chat.person.displayName }}
+            </button>
+          } @else {
+            <strong>Діалог</strong>
+          }
+          <span>
             @if (active(); as chat) {
               {{ peerTyping() ? 'Друкує…' : '@' + chat.person.username }}
             } @else {
@@ -324,7 +342,9 @@
         }
       </header>
       @if (chatLoading()) {
-        <p class="dialog-status" role="status"><app-spinner />Завантажуємо діалог…</p>
+        <p class="dialog-status loading-status" role="status">
+          <app-spinner />Завантажуємо діалог…
+        </p>
       }
       @if (chatError()) {
         <div class="dialog-status" role="alert">
@@ -458,49 +478,68 @@
               </button>
             </div>
           }
-          <form class="composer" (submit)="$event.preventDefault(); send()">
-            <app-file-picker
-              label="Прикріпити файл до 5 МіБ"
-              [iconOnly]="true"
-              [disabled]="actionBusy()"
-              (fileSelected)="uploadFile($event)"
-            />
-            <label class="sr-only" for="message-text">Повідомлення</label
-            ><textarea
-              appInput
-              #composerInput
-              appearance="plain"
-              id="message-text"
-              rows="1"
-              placeholder="Написати повідомлення…"
-              [value]="draft()"
-              [disabled]="sending()"
-              [attr.aria-invalid]="draftTooLong()"
-              aria-describedby="message-help"
-              (input)="draftChanged(inputValue($event))"
-              (keydown)="composerKey($event)"
-            ></textarea
-            ><button
-              appButton
-              variant="primary"
-              type="submit"
-              class="send-button icon-button"
-              aria-label="Надіслати повідомлення"
-              [disabled]="!canSend()"
+          @for (chatId of [selectedId()!]; track chatId) {
+            <form
+              class="composer"
+              [class.voice-active]="voice.phase() !== 'idle'"
+              (submit)="$event.preventDefault(); voice.phase() === 'idle' && send()"
             >
+              <app-voice-composer
+                #voice
+                [chatId]="chatId"
+                [class.composer-hidden]="draft().length > 0 || sending() || !!editingId()"
+                [blocked]="actionBusy() || sending() || !!editingId()"
+                (sent)="voiceSent($event.chatId, $event.message)"
+              />
+              <app-file-picker
+                label="Прикріпити файл до 5 МіБ"
+                [iconOnly]="true"
+                [disabled]="actionBusy()"
+                (fileSelected)="uploadFile($event)"
+              />
+              <label class="sr-only" for="message-text">Повідомлення</label
+              ><textarea
+                appInput
+                #composerInput
+                appearance="plain"
+                id="message-text"
+                rows="1"
+                placeholder="Написати повідомлення…"
+                [value]="draft()"
+                [disabled]="sending()"
+                [attr.aria-invalid]="draftTooLong()"
+                aria-describedby="message-help"
+                (input)="draftChanged(inputValue($event))"
+                (keydown)="composerKey($event)"
+              ></textarea>
+              @if (draft() || sending()) {
+                <button
+                  appButton
+                  variant="primary"
+                  type="submit"
+                  class="send-button icon-button"
+                  aria-label="Надіслати повідомлення"
+                  [disabled]="!canSend()"
+                >
+                  @if (sending()) {
+                    <app-spinner />
+                  } @else {
+                    <app-icon-send />
+                  }
+                </button>
+              }
+              <span id="message-help" class="sr-only"
+                >Enter надсилає, Shift+Enter додає рядок. Максимум
+                {{ messageTextMaxLength }} символів.</span
+              >
               @if (sending()) {
-                <app-spinner />
-              } @else {
-                <app-icon-send />
-              }</button
-            ><span id="message-help" class="sr-only"
-              >Enter надсилає, Shift+Enter додає рядок. Максимум
-              {{ messageTextMaxLength }} символів.</span
-            >
-            @if (sending()) {
-              <span class="sr-only" role="status">Надсилаємо повідомлення…</span>
+                <span class="sr-only" role="status">Надсилаємо повідомлення…</span>
+              }
+            </form>
+            @if (voice.error()) {
+              <p role="alert" class="composer-error">{{ voice.error() }}</p>
             }
-          </form>
+          }
           @if (draftLength() > 3600) {
             <p class="character-count" [class.error]="draftTooLong()" role="status">
               {{ draftLength() }} / {{ messageTextMaxLength }}
@@ -518,6 +557,16 @@
     }
   </main>
 </div>
+
+@if (peerProfileOpen() && active(); as chat) {
+  <app-chat-peer-profile
+    [chatId]="chat.id"
+    [person]="chat.person"
+    [mediaRevision]="peerMediaRevision()"
+    (closed)="peerProfileOpen.set(false)"
+    (hidden)="peerChatHidden(chat.id)"
+  />
+}
 
 @if (profileOpen()) {
   <app-chat-profile-editor

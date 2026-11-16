@@ -48,6 +48,7 @@ jobs:
       - run: npm run build
       - run: npx eslint "{src,apps,libs,test}/**/*.ts"
       - run: npm test -- --runInBand
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: npm run test:e2e -- --runInBand
 
   frontend:

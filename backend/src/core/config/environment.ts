@@ -39,6 +39,25 @@ function readPositiveInteger(name: string) {
   return value;
 }
 
+function readBoundedInteger(
+  name: string,
+  defaultValue: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const raw = process.env[name];
+  const value =
+    raw === undefined ? defaultValue : /^\d+$/.test(raw) ? Number(raw) : NaN;
+
+  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    throw new Error(
+      `${name} must be an integer between ${minimum} and ${maximum}`,
+    );
+  }
+
+  return value;
+}
+
 function readDatabaseConfig(): DatabaseConfig {
   return {
     user: readRequiredString('DB_USER'),
@@ -49,5 +68,10 @@ function readDatabaseConfig(): DatabaseConfig {
   };
 }
 
-export { readDatabaseConfig, readPort, readPositiveInteger };
+export {
+  readBoundedInteger,
+  readDatabaseConfig,
+  readPort,
+  readPositiveInteger,
+};
 export type { DatabaseConfig };

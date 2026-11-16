@@ -10,7 +10,7 @@ RUN npm run build
 
 FROM node:24.20.0-bookworm-slim
 ENV NODE_ENV=production
-RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates ffmpeg && rm -rf /var/lib/apt/lists/*
 WORKDIR /workspace/backend
 COPY --from=build --chown=node:node /workspace/pkg/events /workspace/pkg/events
 COPY --from=build --chown=node:node /workspace/backend/node_modules ./node_modules

@@ -1,0 +1,101 @@
+:host {
+  display: block;
+  position: relative;
+  min-width: 44px;
+  min-height: 44px;
+  color: var(--chat-muted);
+}
+button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  padding: 10px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+button:hover {
+  background: #739db226;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.mic {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  touch-action: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.mic svg {
+  width: 24px;
+  height: 24px;
+}
+.mic.holding {
+  color: #ff8992;
+  background: #f9778126;
+}
+.mic.inactive {
+  visibility: hidden;
+}
+.record-controls {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 0;
+  gap: 8px;
+}
+.record-controls:not(:has(app-voice-player)) {
+  padding-right: 50px;
+}
+app-voice-player {
+  flex: 1;
+  max-width: 392px;
+}
+.recording-status,
+.record-time,
+.hold-hint {
+  font-size: 13px;
+}
+.record-time {
+  color: var(--chat-text);
+  font-variant-numeric: tabular-nums;
+}
+.hold-hint {
+  flex: 1;
+  line-height: 1.2;
+}
+.hold-hint.cancel-armed {
+  color: #ff8992;
+}
+.record-dot,
+.stop-recording span {
+  display: block;
+  width: 9px;
+  height: 9px;
+  background: #ff8992;
+}
+.record-dot {
+  border-radius: 50%;
+}
+.stop-recording span {
+  border-radius: 2px;
+}
+.send-voice {
+  margin-inline-start: auto;
+  color: var(--chat-accent);
+}
+@media (max-width: 480px) {
+  .hold-hint {
+    font-size: 11px;
+  }
+  .stop-recording {
+    margin-inline-start: auto;
+  }
+}

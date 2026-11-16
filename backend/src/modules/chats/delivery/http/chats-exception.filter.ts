@@ -10,6 +10,7 @@ import {
   ChatParticipantNotFoundError,
   InvalidMessageCursorError,
   InvalidMessageTextError,
+  InvalidVoiceAudioError,
 } from '../../domain/chats.errors.js';
 
 type ChatsError =
@@ -17,7 +18,8 @@ type ChatsError =
   | ChatNotFoundError
   | ChatParticipantNotFoundError
   | InvalidMessageCursorError
-  | InvalidMessageTextError;
+  | InvalidMessageTextError
+  | InvalidVoiceAudioError;
 
 @Catch(
   CannotCreateChatWithSelfError,
@@ -25,6 +27,7 @@ type ChatsError =
   ChatParticipantNotFoundError,
   InvalidMessageCursorError,
   InvalidMessageTextError,
+  InvalidVoiceAudioError,
 )
 class ChatsExceptionFilter implements ExceptionFilter<ChatsError> {
   catch(error: ChatsError, host: ArgumentsHost) {

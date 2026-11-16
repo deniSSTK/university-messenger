@@ -10,6 +10,9 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 import type { Response } from 'supertest';
 import * as argon2 from 'argon2';
+import { MemoryRateLimitStore } from '../src/core/rate-limit/memory-rate-limit.store.js';
+import { RATE_LIMIT_STORE } from '../src/core/rate-limit/rate-limit.store.js';
+import type { RateLimitStore } from '../src/core/rate-limit/rate-limit.store.js';
 import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/configure-app.js';
 import { PrismaClient } from '../src/generated/prisma/client.js';
@@ -43,6 +46,10 @@ function refreshCookie(response: Response): string {
 describeDatabase('Auth API (PostgreSQL)', () => {
   let app: INestApplication<App>;
   let pool: Pool;
+  let rateLimit = new MemoryRateLimitStore(2048);
+  const rateLimitStore: RateLimitStore = {
+    consume: (policy, identity) => rateLimit.consume(policy, identity),
+  };
   let prisma: PrismaClient;
   let jwt: JwtService;
   const schema = `auth_test_${randomUUID().replaceAll('-', '')}`;
@@ -106,16 +113,19 @@ describeDatabase('Auth API (PostgreSQL)', () => {
     });
     await prisma.$connect();
     const module = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(RATE_LIMIT_STORE)
+      .useValue(rateLimitStore)
       .overrideProvider(PrismaService)
       .useValue(prisma)
       .compile();
     app = module.createNestApplication();
     configureApp(app);
-    await app.init();
+    await app.listen(0, '127.0.0.1');
     jwt = app.get(JwtService);
   }, 30000);
 
   beforeEach(async () => {
+    rateLimit = new MemoryRateLimitStore(2048);
     await prisma.userSession.deleteMany();
     await prisma.user.deleteMany();
   });
@@ -229,6 +239,25 @@ describeDatabase('Auth API (PostgreSQL)', () => {
       .send({ ...payload, ...invalid })
       .expect(400);
     expect(await prisma.user.count()).toBe(0);
+  });
+
+  it('rate limits public registration regardless of untrusted forwarded IP headers', async () => {
+    const api = request(app.getHttpServer());
+
+    for (let attempt = 1; attempt <= 10; attempt++) {
+      await api
+        .post('/auth/register')
+        .set('X-Forwarded-For', `192.0.2.${attempt}`)
+        .send({})
+        .expect(400);
+    }
+
+    const blocked = await api
+      .post('/auth/register')
+      .set('X-Forwarded-For', '192.0.2.11')
+      .send({})
+      .expect(429);
+    expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
   });
 
   it('rejects missing registration fields', async () => {

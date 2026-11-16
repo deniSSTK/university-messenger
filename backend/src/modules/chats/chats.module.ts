@@ -16,6 +16,8 @@ import {
   type IMessagesRepository,
 } from './domain/chats.repository.js';
 import { PrismaChatsRepository } from './repository/prisma-chats.repository.js';
+import { FfmpegVoiceAudio } from './repository/ffmpeg-voice-audio.js';
+import type { VoiceAudio } from './domain/voice-audio.port.js';
 import { ChatsService } from './service/chats.service.js';
 import { ChatsController } from './delivery/http/chats.controller.js';
 import { ChatMemberGuard } from './delivery/http/guards/chat-member.guard.js';
@@ -27,6 +29,7 @@ import { ChatMemberGuard } from './delivery/http/guards/chat-member.guard.js';
     PrismaChatsRepository,
     ChatEvents,
     ChatSocketServer,
+    FfmpegVoiceAudio,
     { provide: CHATS_REPOSITORY, useExisting: PrismaChatsRepository },
     { provide: MESSAGES_REPOSITORY, useExisting: PrismaChatsRepository },
     {
@@ -36,13 +39,15 @@ import { ChatMemberGuard } from './delivery/http/guards/chat-member.guard.js';
         MESSAGES_REPOSITORY,
         ChatEvents,
         OBJECT_STORAGE,
+        FfmpegVoiceAudio,
       ],
       useFactory: (
         chats: IChatsRepository,
         messages: IMessagesRepository,
         events: ChatEvents,
         storage: ObjectStorage,
-      ) => new ChatsService(chats, messages, events, storage),
+        voiceAudio: VoiceAudio,
+      ) => new ChatsService(chats, messages, events, storage, voiceAudio),
     },
     ChatMemberGuard,
   ],
