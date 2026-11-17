@@ -231,6 +231,13 @@ class ChatSocketServer implements OnApplicationBootstrap, OnModuleDestroy {
     await Promise.all(
       [...this.connections].map(async ([client, connection]) => {
         try {
+          if (
+            event.type === WebSocketEventType.Reaction &&
+            !event.recipients.includes(connection.userId)
+          ) {
+            return;
+          }
+
           if (!(await this.validate(connection))) {
             client.close(4001, 'Session expired');
 
@@ -241,7 +248,21 @@ class ChatSocketServer implements OnApplicationBootstrap, OnModuleDestroy {
             client.readyState === WebSocket.OPEN &&
             (await this.chats.isActiveMember(event.chatId, connection.userId))
           ) {
-            client.send(JSON.stringify(event));
+            const payload =
+              event.type === WebSocketEventType.Reaction
+                ? {
+                    type: event.type,
+                    chatId: event.chatId,
+                    messageId: event.messageId,
+                    reactionVersion: event.reactionVersion,
+                    reactions: event.reactions,
+                    myReaction:
+                      event.selections.find(
+                        ({ userId }) => userId === connection.userId,
+                      )?.type ?? null,
+                  }
+                : event;
+            client.send(JSON.stringify(payload));
           }
         } catch {
           client.close(1011, 'Connection failed');

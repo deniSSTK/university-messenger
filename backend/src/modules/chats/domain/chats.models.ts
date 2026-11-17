@@ -1,3 +1,5 @@
+import type { ReactionState } from '@university-messenger/events';
+
 type ChatParticipant = {
   id: string;
   username: string;
@@ -23,6 +25,7 @@ type ChatMessage = {
   } | null;
   editedAt: Date | null;
   readAt?: Date | null;
+  reactionState?: ReactionState;
 };
 
 type PrivateChat = {

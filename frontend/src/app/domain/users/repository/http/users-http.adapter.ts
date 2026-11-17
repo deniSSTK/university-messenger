@@ -1,3 +1,4 @@
+import type { ReactionType } from '@university-messenger/events';
 import { Injectable, inject } from '@angular/core';
 import { catchError, map, throwError } from 'rxjs';
 import { HttpClient } from '../../../../core/http/http-client.service';
@@ -17,6 +18,7 @@ interface SearchUsersHttpResponse {
 interface UpdateProfileHttpRequest {
   displayName: string;
   avatarUrl?: string | null;
+  defaultReaction?: ReactionType;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -27,6 +29,7 @@ class UsersHttpAdapter implements UsersRepository {
     const request: UpdateProfileHttpRequest = {
       displayName: input.displayName,
       avatarUrl: input.avatarUrl,
+      ...(input.defaultReaction ? { defaultReaction: input.defaultReaction } : {}),
     };
     return this.http.patch<unknown>(`${environment.apiUrl}/users/me`, request).pipe(
       map(() => undefined),

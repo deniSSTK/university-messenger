@@ -1,10 +1,13 @@
+import type { ReactionState, ReactionType } from '@university-messenger/events';
 interface ChatPersonHttpResponse {
+  defaultReaction?: ReactionType;
   id: string;
   username: string;
   displayName: string;
   avatarUrl?: string | null;
 }
 interface ChatMessageHttpResponse {
+  reactionState?: ReactionState;
   id: string;
   chatId: string;
   senderId: string;

@@ -1,10 +1,13 @@
+import type { ReactionState, ReactionType } from '@university-messenger/events';
 interface PersonView {
+  defaultReaction?: ReactionType;
   id: string;
   username: string;
   displayName: string;
   avatarUrl?: string | null;
 }
 interface MessageView {
+  reactionState?: ReactionState;
   id: string;
   senderId: string;
   text: string;

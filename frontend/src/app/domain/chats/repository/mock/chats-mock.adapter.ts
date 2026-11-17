@@ -169,6 +169,10 @@ class ChatsMockAdapter implements ChatsRepository {
     return { ...message };
   }
 
+  async setReaction(): Promise<never> {
+    throw new ChatRepositoryError('unavailable');
+  }
+
   async sendVoice(): Promise<never> {
     throw new ChatRepositoryError('unavailable');
   }

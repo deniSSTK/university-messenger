@@ -1,3 +1,4 @@
+import type { ReactionState, ReactionType } from '@university-messenger/events';
 import { WebSocketEventType } from '@university-messenger/events';
 import { FilePicker } from '../../../../shared/ui/file-picker/file-picker';
 import { Avatar } from '../../../../shared/ui/avatar/avatar';
@@ -46,6 +47,7 @@ function personView(person: ChatPerson): PersonView {
     username: person.username,
     displayName: person.displayName,
     avatarUrl: person.avatarUrl ?? null,
+    ...(person.defaultReaction ? { defaultReaction: person.defaultReaction } : {}),
   };
 }
 function messageView(message: ChatMessage): MessageView {
@@ -54,6 +56,7 @@ function messageView(message: ChatMessage): MessageView {
     senderId: message.senderId,
     text: message.text,
     createdAt: message.createdAt,
+    ...(message.reactionState ? { reactionState: message.reactionState } : {}),
     ...(message.editedAt !== undefined ? { editedAt: message.editedAt } : {}),
     ...(message.readAt !== undefined ? { readAt: message.readAt } : {}),
     ...(message.attachment !== undefined
@@ -86,8 +89,40 @@ function conversationView(chat: Conversation): ConversationView {
     ...(chat.unreadCount !== undefined ? { unreadCount: chat.unreadCount } : {}),
   };
 }
+function withLatestReaction(message: MessageView, known: MessageView | undefined): MessageView {
+  const state = known?.reactionState;
+  return state && state.reactionVersion > (message.reactionState?.reactionVersion ?? -1)
+    ? { ...message, reactionState: state }
+    : message;
+}
+
+function optimisticReaction(
+  state: ReactionState | undefined,
+  next: ReactionType | null,
+): ReactionState {
+  const counts = new Map(state?.reactions.map(({ type, count }) => [type, count]));
+  const previous = state?.myReaction;
+
+  if (previous) {
+    counts.set(previous, (counts.get(previous) ?? 1) - 1);
+  }
+  if (next) {
+    counts.set(next, (counts.get(next) ?? 0) + 1);
+  }
+
+  return {
+    reactionVersion: state?.reactionVersion ?? 0,
+    myReaction: next,
+    reactions: [...counts].flatMap(([type, count]) => (count > 0 ? [{ type, count }] : [])),
+  };
+}
+
 function mergeMessages(current: MessageView[], incoming: MessageView[]) {
-  const unique = new Map([...current, ...incoming].map((message) => [message.id, message]));
+  const unique = new Map(current.map((message) => [message.id, message]));
+  for (const message of incoming) {
+    unique.set(message.id, withLatestReaction(message, unique.get(message.id)));
+  }
+
   return [...unique.values()].sort(
     (left, right) =>
       left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id),
@@ -150,6 +185,7 @@ class Chats {
   readonly peerMediaRevision = signal(0);
   readonly profileOpen = signal(false);
   readonly profileName = signal('');
+  readonly profileReaction = signal<ReactionType>('HEART');
   readonly profileAvatar = signal<string | null>(null);
   readonly avatarModified = signal(false);
   readonly profileSaving = signal(false);
@@ -168,14 +204,24 @@ class Chats {
   readonly profileError = signal('');
   readonly showScrollDown = signal(false);
 
+  private readonly reactionIntents = signal(new Map<string, ReactionType | null>());
+  private readonly reactionRequests = new Set<string>();
   readonly messageRows = computed(() => {
     const messages = this.messages();
     return messages.map((message, index) => {
       const previous = messages[index - 1];
       const newDay =
         !previous || this.dayKey(previous.createdAt) !== this.dayKey(message.createdAt);
+      const intent = this.reactionIntents().get(message.id);
+
       return {
-        message,
+        message:
+          intent === undefined
+            ? message
+            : {
+                ...message,
+                reactionState: optimisticReaction(message.reactionState, intent),
+              },
         dateLabel: newDay ? this.dayLabel(message.createdAt) : null,
         grouped: !newDay && previous.senderId === message.senderId,
       };
@@ -270,6 +316,15 @@ class Chats {
         this.liveConnected = true;
         this.connection.set('ready');
         this.queueLiveSync();
+      } else if (event.type === WebSocketEventType.Reaction) {
+        if (event.chatId === this.selectedId() && event.reaction) {
+          const { messageId, ...state } = event.reaction;
+          if (this.messages().some(({ id }) => id === messageId)) {
+            this.applyReaction(messageId, state);
+          } else if (this.chatLoading() || this.historyLoading() || this.liveBusy) {
+            this.queueLiveSync();
+          }
+        }
       } else if (event.type === WebSocketEventType.Changed) {
         if (event.chatId === this.selectedId() && this.peerProfileOpen()) {
           this.peerMediaRevision.update((value) => value + 1);
@@ -726,7 +781,11 @@ class Chats {
         const atBottom = !this.showScrollDown();
         const anchor = this.captureAnchor();
         const savedDuringSync = this.messages().filter((message) => !existingIds.has(message.id));
-        this.messages.set(mergeMessages(history.messages.map(messageView), savedDuringSync));
+        const known = new Map(this.messages().map((message) => [message.id, message]));
+        const incoming = history.messages.map((message) =>
+          withLatestReaction(messageView(message), known.get(message.id)),
+        );
+        this.messages.set(mergeMessages(incoming, savedDuringSync));
         this.nextBefore.set(history.nextBefore);
         this.latestFetchedMessageId = history.messages.at(-1)?.id ?? null;
         this.afterRender(chatId, () => {
@@ -881,6 +940,73 @@ class Chats {
     }
   }
 
+  private applyReaction(messageId: string, state: ReactionState): void {
+    this.messages.update((messages) =>
+      messages.map((message) =>
+        message.id === messageId &&
+        state.reactionVersion > (message.reactionState?.reactionVersion ?? -1)
+          ? { ...message, reactionState: state }
+          : message,
+      ),
+    );
+  }
+
+  async react(message: MessageView, picked: ReactionType): Promise<void> {
+    const chatId = this.selectedId();
+    const current = this.messages().find(({ id }) => id === message.id);
+
+    if (!chatId || !current) {
+      return;
+    }
+
+    const previous = this.reactionIntents().has(message.id)
+      ? this.reactionIntents().get(message.id)
+      : current.reactionState?.myReaction;
+    const requested = previous === picked ? null : picked;
+    this.reactionIntents.update((intents) => new Map(intents).set(message.id, requested));
+
+    if (this.reactionRequests.has(message.id)) {
+      return;
+    }
+
+    this.reactionRequests.add(message.id);
+    try {
+      while (!this.destroyed) {
+        const intent = this.reactionIntents().get(message.id);
+
+        if (intent === undefined) {
+          break;
+        }
+
+        let failed = false;
+
+        try {
+          const state = await this.service.setReaction(chatId, message.id, intent);
+          if (this.selectedId() === chatId) {
+            this.applyReaction(message.id, state);
+          }
+        } catch {
+          failed = true;
+        }
+
+        if (this.reactionIntents().get(message.id) === intent) {
+          this.reactionIntents.update((intents) => {
+            const remaining = new Map(intents);
+            remaining.delete(message.id);
+            return remaining;
+          });
+
+          if (failed && !this.destroyed && this.selectedId() === chatId) {
+            this.actionError.set('Не вдалося змінити реакцію. Спробуйте ще раз.');
+            this.queueLiveSync();
+          }
+        }
+      }
+    } finally {
+      this.reactionRequests.delete(message.id);
+    }
+  }
+
   async openProfile() {
     this.closeMenus();
     this.profileError.set('');
@@ -888,6 +1014,7 @@ class Chats {
       const person = await this.service.viewer();
       this.viewer.set(personView(person));
       this.profileName.set(person.displayName);
+      this.profileReaction.set(person.defaultReaction ?? 'HEART');
       this.profileAvatar.set(person.avatarUrl ?? null);
       this.avatarModified.set(false);
       this.profileOpen.set(true);
@@ -934,6 +1061,9 @@ class Chats {
       await firstValueFrom(
         this.users.updateProfile({
           displayName: this.profileName(),
+          ...(this.profileReaction() !== (this.viewer()?.defaultReaction ?? 'HEART')
+            ? { defaultReaction: this.profileReaction() }
+            : {}),
           ...(this.avatarModified() ? { avatarUrl: this.profileAvatar() } : {}),
         }),
       );

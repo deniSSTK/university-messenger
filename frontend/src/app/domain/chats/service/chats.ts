@@ -1,3 +1,4 @@
+import type { ReactionState, ReactionType } from '@university-messenger/events';
 import { ACTIVITY_REPOSITORY } from '../repository/activity.repository';
 import type {
   ChatActivity,
@@ -27,6 +28,7 @@ function mapPerson(person: ChatPersonRecord): ChatPerson {
     username: person.username,
     displayName: person.displayName,
     avatarUrl: person.avatarUrl ?? null,
+    ...(person.defaultReaction ? { defaultReaction: person.defaultReaction } : {}),
   };
 }
 function mapMessage(message: ChatMessageRecord): ChatMessage {
@@ -35,6 +37,7 @@ function mapMessage(message: ChatMessageRecord): ChatMessage {
     senderId: message.senderId,
     text: message.text,
     createdAt: message.createdAt,
+    ...(message.reactionState ? { reactionState: message.reactionState } : {}),
     ...(message.editedAt !== undefined ? { editedAt: message.editedAt } : {}),
     ...(message.readAt !== undefined ? { readAt: message.readAt } : {}),
     ...(message.attachment !== undefined
@@ -106,6 +109,7 @@ class ChatService {
           chatId: event.chatId,
           userId: event.userId,
           typing: event.typing,
+          ...(event.reaction ? { reaction: event.reaction } : {}),
         }),
       ) ?? (() => {})
     );
@@ -222,6 +226,14 @@ class ChatService {
 
     return this.run(async () => mapMessage(await this.repository.send(chatId, text)));
   }
+  setReaction(
+    chatId: string,
+    messageId: string,
+    type: ReactionType | null,
+  ): Promise<ReactionState> {
+    return this.run(() => this.repository.setReaction(chatId, messageId, type));
+  }
+
   sendVoice(chatId: string, recording: VoiceRecordingInput): Promise<ChatMessage> {
     if (recording.bytes.length < 1 || recording.bytes.length > VOICE_MAX_BYTES) {
       return Promise.reject(new ChatError('validation'));

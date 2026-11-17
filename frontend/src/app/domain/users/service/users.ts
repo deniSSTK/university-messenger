@@ -1,3 +1,4 @@
+import type { ReactionType } from '@university-messenger/events';
 import { countCodePoints } from '../../../core/text/unicode';
 import { Injectable, inject } from '@angular/core';
 import { map, of, throwError } from 'rxjs';
@@ -21,6 +22,7 @@ class UserProfileValidationError extends Error {}
 interface UpdateProfileInput {
   displayName: string;
   avatarUrl?: string | null;
+  defaultReaction?: ReactionType;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -32,7 +34,11 @@ class Users {
     if (!displayName || countCodePoints(displayName) > 64) {
       return throwError(() => new UserProfileValidationError());
     }
-    return this.repository.updateProfile({ displayName, avatarUrl: input.avatarUrl });
+    return this.repository.updateProfile({
+      displayName,
+      avatarUrl: input.avatarUrl,
+      ...(input.defaultReaction ? { defaultReaction: input.defaultReaction } : {}),
+    });
   }
 
   search(input: SearchUsersInput) {

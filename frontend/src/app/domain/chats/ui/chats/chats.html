@@ -276,7 +276,11 @@
             [attr.aria-label]="'Відкрити профіль: ' + chat.person.displayName"
             (click)="peerProfileOpen.set(true)"
           >
-            <app-avatar [size]="42" [name]="chat.person.displayName" [src]="chat.person.avatarUrl" />
+            <app-avatar
+              [size]="42"
+              [name]="chat.person.displayName"
+              [src]="chat.person.avatarUrl"
+            />
           </button>
         }
         <div class="peer">
@@ -396,11 +400,18 @@
                     [class.own]="row.message.senderId === viewer()?.id"
                     [class.grouped]="row.grouped"
                     [attr.data-message-id]="row.message.id"
+                    (dblclick)="bubble.quickReact($event)"
+                    (contextmenu)="bubble.openMenu($event)"
                   >
                     <app-chat-bubble
+                      #bubble
                       [chatId]="selectedId()!"
                       [message]="row.message"
                       [own]="row.message.senderId === viewer()?.id"
+                      [reactionViewer]="viewer()"
+                      [reactionPeer]="active()?.person ?? null"
+                      [defaultReaction]="viewer()?.defaultReaction ?? 'HEART'"
+                      (react)="react(row.message, $event)"
                       (edit)="beginEdit(row.message)"
                       (remove)="deleteMessage(row.message)"
                       (download)="downloadFile(row.message)"
@@ -555,6 +566,8 @@
 @if (profileOpen()) {
   <app-chat-profile-editor
     [name]="profileName()"
+    [defaultReaction]="profileReaction()"
+    (reactionChanged)="profileReaction.set($event)"
     [avatar]="profileAvatar()"
     [saving]="profileSaving()"
     [error]="profileError()"

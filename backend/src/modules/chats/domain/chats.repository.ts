@@ -8,6 +8,11 @@ import type {
 
 import type { MediaCategory, MediaCounts } from './shared-media.js';
 
+import type {
+  SetReactionInput,
+  ReactionSnapshot,
+} from './message-reactions.js';
+
 type CreatePrivateChatInput = {
   currentUserId: string;
   recipientId: string;
@@ -82,6 +87,7 @@ type AttachmentData = {
   legacyBytes: Uint8Array | null;
 };
 interface IMessagesRepository {
+  setReaction(input: SetReactionInput): Promise<ReactionSnapshot>;
   findAttachment(
     chatId: string,
     messageId: string,

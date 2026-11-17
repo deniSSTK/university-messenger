@@ -1,11 +1,14 @@
+import type { ReactionState, ReactionType } from '@university-messenger/events';
 import { WebSocketEventType } from '@university-messenger/events';
 interface ChatPerson {
+  defaultReaction?: ReactionType;
   id: string;
   username: string;
   displayName: string;
   avatarUrl?: string | null;
 }
 interface ChatMessage {
+  reactionState?: ReactionState;
   id: string;
   senderId: string;
   text: string;
@@ -39,10 +42,12 @@ type ChatActivity = {
     | WebSocketEventType.Ready
     | WebSocketEventType.Offline
     | WebSocketEventType.Changed
-    | WebSocketEventType.Typing;
+    | WebSocketEventType.Typing
+    | WebSocketEventType.Reaction;
   chatId?: string;
   userId?: string;
   typing?: boolean;
+  reaction?: ReactionState & { messageId: string };
 };
 type ChatFile = { name: string; mediaType: string; bytes: Uint8Array };
 

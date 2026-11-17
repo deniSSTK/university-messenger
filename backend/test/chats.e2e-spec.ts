@@ -1163,6 +1163,116 @@ describeDatabase('Chats API (PostgreSQL)', () => {
     ]);
   });
 
+  it('persists the signed-in user’s default and enforces unique authorized message reactions', async () => {
+    const alice = await register('alice');
+    const bob = await register('bob');
+    const outsider = await register('outsider');
+    const api = request(app.getHttpServer());
+    const token = (user: AuthResponse) => `Bearer ${user.accessToken}`;
+    await api
+      .get('/auth/me')
+      .set('Authorization', token(alice))
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({ defaultReaction: 'HEART' });
+      });
+    await api
+      .patch('/users/me')
+      .set('Authorization', token(alice))
+      .send({ displayName: 'Alice', defaultReaction: 'FIRE' })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({ defaultReaction: 'FIRE' });
+      });
+    await api
+      .patch('/users/me')
+      .set('Authorization', token(alice))
+      .send({ displayName: 'Alice', defaultReaction: '🔥' })
+      .expect(400);
+    await api
+      .get('/auth/me')
+      .set('Authorization', token(alice))
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({ defaultReaction: 'FIRE' });
+      });
+
+    const chat = responseBody<ChatResponse>(
+      await api
+        .post('/chats')
+        .set('Authorization', token(alice))
+        .send({ recipientId: bob.user.id })
+        .expect(201),
+    );
+    const base = `/chats/${chat.id}/messages`;
+    const message = responseBody<MessageResponse>(
+      await api
+        .post(base)
+        .set('Authorization', token(alice))
+        .send({ text: 'React here' })
+        .expect(201),
+    );
+    const messageUrl = `${base}/${message.id}`;
+    const url = `${messageUrl}/reaction`;
+    const set = (user: AuthResponse, type: string | null) =>
+      api.put(url).set('Authorization', token(user)).send({ type });
+
+    await api.put(url).send({ type: 'HEART' }).expect(401);
+    await set(outsider, 'HEART').expect(404);
+    await set(alice, 'unknown').expect(400);
+    await api.put(url).set('Authorization', token(alice)).send({}).expect(400);
+    const [first, duplicate] = await Promise.all([
+      set(alice, 'HEART').expect(200),
+      set(alice, 'HEART').expect(200),
+    ]);
+    expect(first.body).toEqual({
+      reactionVersion: 1,
+      reactions: [{ type: 'HEART', count: 1 }],
+      myReaction: 'HEART',
+    });
+    expect(duplicate.body).toEqual(first.body);
+    expect(
+      await prisma.messageReaction.count({ where: { messageId: message.id } }),
+    ).toBe(1);
+    await set(bob, 'HEART').expect(200, {
+      reactionVersion: 2,
+      reactions: [{ type: 'HEART', count: 2 }],
+      myReaction: 'HEART',
+    });
+    await set(alice, 'FIRE').expect(200);
+    await set(bob, null).expect(200, {
+      reactionVersion: 4,
+      reactions: [{ type: 'FIRE', count: 1 }],
+      myReaction: null,
+    });
+    await api
+      .patch(messageUrl)
+      .set('Authorization', token(alice))
+      .send({ text: 'Edited' })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({ reactionState: { myReaction: 'FIRE' } });
+      });
+    const history = await api
+      .get(base)
+      .set('Authorization', token(bob))
+      .expect(200);
+    expect(
+      responseBody<MessageHistoryResponse>(history).items[0],
+    ).toMatchObject({
+      reactionState: {
+        reactionVersion: 4,
+        reactions: [{ type: 'FIRE', count: 1 }],
+        myReaction: null,
+      },
+    });
+    await api.delete(messageUrl).set('Authorization', token(alice)).expect(204);
+    expect(
+      await prisma.messageReaction.count({ where: { messageId: message.id } }),
+    ).toBe(0);
+    await set(bob, 'HEART').expect(404);
+  });
+
   it('delivers authorized WebSocket changes and typing events and rejects a revoked session', async () => {
     const alice = await register('alice');
     const bob = await register('bob');
@@ -1247,6 +1357,29 @@ describeDatabase('Chats API (PostgreSQL)', () => {
           where: { id: responseBody<MessageResponse>(voice).id },
         }),
       ).toMatchObject({ chatId: chat.id });
+      expect(otherEvents).toEqual([]);
+
+      const messageForReaction = await prisma.message.findFirstOrThrow({
+        where: { chatId: chat.id, text: 'Live' },
+      });
+      const [authorReaction, peerReaction] = await Promise.all([
+        next(author, WebSocketEventType.Reaction),
+        next(recipient, WebSocketEventType.Reaction),
+        request(app.getHttpServer())
+          .put(`/chats/${chat.id}/messages/${messageForReaction.id}/reaction`)
+          .set('Authorization', `Bearer ${alice.accessToken}`)
+          .send({ type: 'CLAP' })
+          .expect(200),
+      ]);
+      expect(authorReaction).toMatchObject({
+        messageId: messageForReaction.id,
+        reactions: [{ type: 'CLAP', count: 1 }],
+        myReaction: 'CLAP',
+      });
+      expect(peerReaction).toMatchObject({
+        messageId: messageForReaction.id,
+        myReaction: null,
+      });
       expect(otherEvents).toEqual([]);
 
       const typing = next(author, 'typing');
@@ -1397,6 +1530,20 @@ describeDatabase('Chats API (PostgreSQL)', () => {
       await expect(
         connection.query('SELECT "fileKey" FROM "Message"'),
       ).rejects.toThrow('does not exist');
+      const laterMigrations = directories
+        .filter((entry) => entry.isDirectory() && entry.name > target)
+        .map((entry) => entry.name)
+        .sort();
+
+      for (const migration of laterMigrations) {
+        await connection.query(
+          await readFile(
+            join(migrationsPath, migration, 'migration.sql'),
+            'utf8',
+          ),
+        );
+      }
+
       migrated = new PrismaClient({
         adapter: new PrismaPg(
           {

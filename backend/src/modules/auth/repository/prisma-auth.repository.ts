@@ -25,6 +25,7 @@ const publicUserSelect = {
   displayName: true,
   avatarUrl: true,
   avatarKey: true,
+  defaultReaction: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.UserSelect;

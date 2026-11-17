@@ -1,3 +1,4 @@
+import type { ReactionState } from '@university-messenger/events';
 import { WebSocketEventType } from '@university-messenger/events';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
@@ -49,6 +50,7 @@ describe('chat screen', () => {
     edit: vi.fn(),
     remove: vi.fn(),
     syncHistory: vi.fn(),
+    setReaction: vi.fn<ChatService['setReaction']>(),
     viewer: vi.fn<() => Promise<ChatPerson>>(),
     list: vi.fn<(page: number) => Promise<ChatPage>>(),
     get: vi.fn<(id: string) => Promise<Conversation>>(),
@@ -104,6 +106,116 @@ describe('chat screen', () => {
     fixture.detectChanges();
     await settle();
   }
+
+  it('applies the configured default from anywhere in the message row and rolls back a failed queued reaction', async () => {
+    const pending = deferred<ReactionState>();
+    const second = deferred<ReactionState>();
+    api.viewer.mockResolvedValue({ ...viewer, defaultReaction: 'FIRE' });
+    api.history.mockResolvedValue({ messages: [message()], nextBefore: null });
+    api.setReaction.mockReturnValueOnce(pending.promise).mockReturnValueOnce(second.promise);
+    await select();
+    const host = fixture.nativeElement as HTMLElement;
+    const row = host.querySelector('.message-row')!;
+    row
+      .querySelector('.message-options')!
+      .dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(api.setReaction).not.toHaveBeenCalled();
+
+    row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(api.setReaction).toHaveBeenCalledWith('a', 'm1', 'FIRE');
+    fixture.detectChanges();
+    expect(host.querySelector('.reaction-pills')?.textContent).toContain('🔥');
+
+    void component.react(component.messages()[0], 'HEART');
+    expect(api.setReaction).toHaveBeenCalledTimes(1);
+    pending.resolve({
+      reactionVersion: 1,
+      reactions: [{ type: 'FIRE', count: 1 }],
+      myReaction: 'FIRE',
+    });
+    await settle();
+    expect(api.setReaction).toHaveBeenLastCalledWith('a', 'm1', 'HEART');
+    second.reject(new Error('Offline'));
+    await settle();
+    expect(component.messageRows()[0].message.reactionState?.myReaction).toBe('FIRE');
+    expect(component.actionError()).toContain('Не вдалося змінити реакцію');
+  });
+
+  it('opens the reaction picker on right-click anywhere in the message row', async () => {
+    api.history.mockResolvedValue({ messages: [message()], nextBefore: null });
+    await select();
+    const host = fixture.nativeElement as HTMLElement;
+    const row = host.querySelector('.message-row')!;
+
+    for (const target of [row, row.querySelector('.message')!]) {
+      const event = new MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 30,
+        clientY: 30,
+      });
+      target.dispatchEvent(event);
+      fixture.detectChanges();
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(row.querySelectorAll('app-chat-reaction-picker button')).toHaveLength(7);
+      row.querySelector<HTMLButtonElement>('.context-backdrop')?.click();
+      fixture.detectChanges();
+    }
+  });
+
+  it('opens the reaction picker with touch hold, but cancels on scroll', async () => {
+    api.history.mockResolvedValue({
+      messages: [{ ...message(), senderId: peer.id }],
+      nextBefore: null,
+    });
+    await select();
+    vi.useFakeTimers();
+    const host = fixture.nativeElement as HTMLElement;
+    const bubble = host.querySelector<HTMLElement>('.message')!;
+    function touch(type: string, x: number): void {
+      const event = new MouseEvent(type, { bubbles: true, clientX: x, clientY: 10 });
+      Object.assign(event, { pointerType: 'touch', isPrimary: true });
+      bubble.dispatchEvent(event);
+    }
+
+    touch('pointerdown', 10);
+    touch('pointermove', 50);
+    vi.advanceTimersByTime(550);
+    fixture.detectChanges();
+    expect(host.querySelector('.message-menu')).toBeNull();
+
+    touch('pointerdown', 10);
+    vi.advanceTimersByTime(550);
+    fixture.detectChanges();
+    expect(host.querySelectorAll('app-chat-reaction-picker button')).toHaveLength(7);
+    bubble.querySelector('button')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(api.setReaction).not.toHaveBeenCalled();
+  });
+
+  it('applies live reaction state and ignores an older event for the same message', async () => {
+    api.history.mockResolvedValue({ messages: [message()], nextBefore: null });
+    await select();
+    const notify = api.watch.mock.calls[0][0];
+    const react = (reactionVersion: number, count: number) =>
+      notify({
+        type: WebSocketEventType.Reaction,
+        chatId: 'a',
+        reaction: {
+          messageId: 'm1',
+          reactionVersion,
+          reactions: [{ type: 'HEART', count }],
+          myReaction: null,
+        },
+      });
+
+    react(2, 2);
+    react(1, 1);
+    fixture.detectChanges();
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('.reaction-count')?.textContent?.trim(),
+    ).toBe('2');
+  });
 
   it('debounces search, cancels old results and restores chats for whitespace', async () => {
     const old = new Subject<SearchUsersResult>();

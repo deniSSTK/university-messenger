@@ -11,6 +11,7 @@ import {
 import { MessageParamsDto, ReadMessagesDto } from './dto/message-params.dto.js';
 import {
   Body,
+  Put,
   Patch,
   Delete,
   HttpCode,
@@ -70,6 +71,11 @@ import {
 import { ListChatsRequestDto } from './dto/list-chats-request.dto.js';
 import { ListMessagesRequestDto } from './dto/list-messages-request.dto.js';
 import { SendMessageDto } from './dto/send-message.dto.js';
+
+import {
+  ReactionStateDto,
+  SetReactionDto,
+} from './dto/message-reaction.dto.js';
 
 function toChatDetailsResponse(
   chat: ChatDetailsResult,
@@ -333,6 +339,31 @@ class ChatsController {
       mediaType: file.mediaType,
       content: Buffer.from(file.bytes).toString('base64'),
     };
+  }
+
+  @Put(':chatId/messages/:messageId/reaction')
+  @UseGuards(ChatMemberGuard)
+  @RateLimit(90, RateLimitPeriod.MINUTE)
+  @ApiOperation({ summary: 'Set or remove your reaction to a message' })
+  @ApiOkResponse({ type: ReactionStateDto })
+  @ApiBadRequestResponse({
+    description: 'Invalid message ID or reaction type.',
+  })
+  @ApiUnauthorizedResponse({ description: 'Inactive session.' })
+  @ApiNotFoundResponse({
+    description: 'Message is unavailable to the current user.',
+  })
+  setReaction(
+    @Param() params: MessageParamsDto,
+    @Body() dto: SetReactionDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<ReactionStateDto> {
+    return this.chats.setReaction({
+      chatId: params.chatId,
+      messageId: params.messageId,
+      userId: request.auth.user.id,
+      type: dto.type,
+    });
   }
 
   @Patch(':chatId/messages/:messageId')

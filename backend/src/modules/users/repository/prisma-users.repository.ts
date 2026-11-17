@@ -32,6 +32,7 @@ class PrismaUsersRepository implements UsersRepository {
           displayName: input.displayName,
           avatarUrl: input.avatarUrl,
           avatarKey: input.avatarKey,
+          defaultReaction: input.defaultReaction,
         },
         select: {
           id: true,
@@ -39,6 +40,7 @@ class PrismaUsersRepository implements UsersRepository {
           displayName: true,
           avatarUrl: true,
           avatarKey: true,
+          defaultReaction: true,
         },
       });
 
@@ -50,6 +52,7 @@ class PrismaUsersRepository implements UsersRepository {
           displayName: user.displayName,
           avatarUrl: user.avatarUrl,
           avatarKey: user.avatarKey,
+          defaultReaction: user.defaultReaction,
         },
       };
     });

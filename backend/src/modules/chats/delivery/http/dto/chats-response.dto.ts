@@ -1,9 +1,11 @@
 import { AttachmentMetadataDto } from './attachment.dto.js';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UUID } from '../../../../../core/decorators/uuid.decorator.js';
 import { PaginatedResponseDto } from '../../../../../core/pagination/dto/paginated-response.dto.js';
 import { PaginationMetaDto } from '../../../../../core/pagination/dto/pagination-meta.dto.js';
 import { CHATS_EXAMPLES } from './chats.examples.js';
+
+import { ReactionStateDto } from './message-reaction.dto.js';
 
 class ChatParticipantDto {
   @UUID()
@@ -60,6 +62,9 @@ class ChatMessageDto {
 
   @ApiProperty({ type: AttachmentMetadataDto, nullable: true, example: null })
   attachment?: AttachmentMetadataDto | null;
+
+  @ApiPropertyOptional({ type: ReactionStateDto })
+  reactionState?: ReactionStateDto;
 }
 
 class ChatListItemDto {

@@ -46,6 +46,7 @@ class UsersController {
         userId: request.auth.user.id,
         displayName: dto.displayName,
         avatarUrl: dto.avatarUrl,
+        defaultReaction: dto.defaultReaction,
       });
 
       return {
@@ -53,6 +54,7 @@ class UsersController {
         username: result.username,
         displayName: result.displayName,
         avatarUrl: result.avatarUrl,
+        defaultReaction: result.defaultReaction,
       };
     } catch (error: unknown) {
       if (error instanceof InvalidProfileError) {

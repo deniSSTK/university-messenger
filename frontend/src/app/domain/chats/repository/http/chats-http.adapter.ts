@@ -1,3 +1,4 @@
+import type { ReactionState, ReactionType } from '@university-messenger/events';
 import { Injectable, inject } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
@@ -34,6 +35,7 @@ function mapPerson(person: ChatPersonHttpResponse): ChatPersonRecord {
     username: person.username,
     displayName: person.displayName,
     avatarUrl: person.avatarUrl ?? null,
+    ...(person.defaultReaction ? { defaultReaction: person.defaultReaction } : {}),
   };
 }
 function mapMessage(message: ChatMessageHttpResponse): ChatMessageRecord {
@@ -42,6 +44,7 @@ function mapMessage(message: ChatMessageHttpResponse): ChatMessageRecord {
     senderId: message.senderId,
     text: message.text,
     createdAt: message.createdAt,
+    ...(message.reactionState ? { reactionState: message.reactionState } : {}),
     ...(message.editedAt !== undefined ? { editedAt: message.editedAt } : {}),
     ...(message.readAt !== undefined ? { readAt: message.readAt } : {}),
     ...(message.attachment !== undefined
@@ -194,6 +197,21 @@ class ChatsHttpAdapter implements ChatsRepository {
       );
       return mapMessage(response);
     });
+  }
+
+  setReaction(
+    chatId: string,
+    messageId: string,
+    type: ReactionType | null,
+  ): Promise<ReactionState> {
+    return this.translateErrors(() =>
+      firstValueFrom(
+        this.http.put<ReactionState>(
+          `${this.chatUrl(chatId)}/messages/${encodeURIComponent(messageId)}/reaction`,
+          { type },
+        ),
+      ),
+    );
   }
 
   sendVoice(chatId: string, recording: VoiceRecordingRecord): Promise<ChatMessageRecord> {

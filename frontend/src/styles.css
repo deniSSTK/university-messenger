@@ -25,6 +25,24 @@ body {
   gap: 8px;
 }
 
+:where(
+  button,
+  a[download],
+  input[type='file'],
+  input[type='range'],
+  app-file-picker,
+  app-avatar,
+  app-spinner,
+  img,
+  svg,
+  audio,
+  video,
+  time
+) {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 input:focus-visible,
 button:focus-visible,
 a:focus-visible {

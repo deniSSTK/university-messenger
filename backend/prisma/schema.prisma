@@ -10,21 +10,23 @@ datasource db {
 }
 
 model User {
-  id           String    @id @default(uuid()) @db.Uuid
+  id              String       @id @default(uuid()) @db.Uuid
   /// Case-insensitive uniqueness is enforced by User_email_lower_key in SQL migrations.
-  email        String    @unique
-  username     String    @unique
-  displayName  String
-  passwordHash String
-  avatarUrl    String?
-  avatarKey    String?
-  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt    DateTime? @db.Timestamptz(3)
+  email           String       @unique
+  username        String       @unique
+  displayName     String
+  passwordHash    String
+  avatarUrl       String?
+  avatarKey       String?
+  defaultReaction ReactionType @default(HEART)
+  createdAt       DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime     @updatedAt @db.Timestamptz(3)
+  deletedAt       DateTime?    @db.Timestamptz(3)
 
   sessions        UserSession[]
   chatMemberships ChatMember[]
   messages        Message[]
+  reactions       MessageReaction[]
 }
 
 model UserSession {
@@ -71,16 +73,18 @@ model ChatMember {
 }
 
 model Message {
-  id             String    @id @default(uuid()) @db.Uuid
-  chatId         String    @db.Uuid
-  senderId       String    @db.Uuid
-  attachmentId   String?   @unique @db.Uuid
-  voiceRequestId String?   @db.Uuid
-  text           String
-  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
-  editedAt       DateTime? @db.Timestamptz(3)
-  readAt         DateTime? @db.Timestamptz(3)
-  deletedAt      DateTime? @db.Timestamptz(3)
+  reactionVersion Int               @default(0)
+  reactions       MessageReaction[]
+  id              String            @id @default(uuid()) @db.Uuid
+  chatId          String            @db.Uuid
+  senderId        String            @db.Uuid
+  attachmentId    String?           @unique @db.Uuid
+  voiceRequestId  String?           @db.Uuid
+  text            String
+  createdAt       DateTime          @default(now()) @db.Timestamptz(3)
+  editedAt        DateTime?         @db.Timestamptz(3)
+  readAt          DateTime?         @db.Timestamptz(3)
+  deletedAt       DateTime?         @db.Timestamptz(3)
 
   chat       Chat        @relation(fields: [chatId], references: [id], onDelete: Restrict)
   sender     User        @relation(fields: [senderId], references: [id], onDelete: Restrict)
@@ -116,4 +120,28 @@ model AttachmentVoice {
   waveform     Int[]  @default([])
 
   attachment Attachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+}
+
+enum ReactionType {
+  HEART
+  CLOWN
+  THUMBS_UP
+  THUMBS_DOWN
+  FIRE
+  SMILING_FACE_WITH_HEARTS
+  CLAP
+}
+
+model MessageReaction {
+  userId    String       @db.Uuid
+  messageId String       @db.Uuid
+  type      ReactionType
+  createdAt DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime     @updatedAt @db.Timestamptz(3)
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@id([userId, messageId])
+  @@index([messageId])
 }

@@ -1,3 +1,4 @@
+import type { ReactionType } from '@university-messenger/events';
 import { InjectionToken } from '@angular/core';
 import type { Observable } from 'rxjs';
 
@@ -21,6 +22,7 @@ class UsersRepositoryError extends Error {}
 interface UpdateProfileRepositoryInput {
   displayName: string;
   avatarUrl?: string | null;
+  defaultReaction?: ReactionType;
 }
 interface UsersRepository {
   updateProfile(input: UpdateProfileRepositoryInput): Observable<void>;

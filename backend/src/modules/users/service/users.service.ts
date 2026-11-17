@@ -53,6 +53,9 @@ class UsersService {
       result = await this.repository.updateProfile({
         userId: input.userId,
         displayName,
+        ...(input.defaultReaction
+          ? { defaultReaction: input.defaultReaction }
+          : {}),
         ...(key !== undefined ? { avatarKey: key, avatarUrl: null } : {}),
       });
     } catch (error: unknown) {
@@ -78,6 +81,9 @@ class UsersService {
       id: result.profile.id,
       username: result.profile.username,
       displayName: result.profile.displayName,
+      ...(result.profile.defaultReaction
+        ? { defaultReaction: result.profile.defaultReaction }
+        : {}),
       avatarUrl: (await avatarUrl(result.profile, this.storage)) ?? null,
     };
   }

@@ -364,6 +364,8 @@ npm test -- --watch=false
 Frontend tests mock HTTP requests and do not require PostgreSQL. Use the documented Node.js version:
 Node.js `22.19.0` is below the Angular CLI minimum and cannot run the frontend build or test commands.
 
+A double click toggles the saved default message reaction. Right-click or touch and hold a message to choose from seven reactions. New users default to HEART and can change it in their profile. Each user has one reaction per message. Updating a reaction uses `PUT /chats/:chatId/messages/:messageId/reaction`, with `type: null` to remove it. Connected participants receive `message:reaction:update` with their own selection and a version for ordering. History includes reaction state.
+
 ## API rate limits
 
 `@RateLimit(count, RateLimitPeriod.MINUTE)` sets a fixed window per endpoint and authenticated user. Public auth endpoints use the client IP, grouping IPv6 clients by /64. A rejected request returns HTTP 429 and `Retry-After` in seconds.
@@ -373,7 +375,7 @@ Node.js `22.19.0` is below the Angular CLI minimum and cannot run the frontend b
 | Register / log in / refresh | 10 / 15 / 60 |
 | Update profile / search users | 12 / 90 |
 | Open chat / count shared media | 30 / 60 |
-| Send text / upload file / send voice | 90 / 20 / 12 |
+| Send text / upload file / send voice / react | 90 / 20 / 12 / 90 |
 | Download attachment / read message history | 180 / 240 |
 
 The in-memory store applies per backend process and resets on a restart. `RATE_LIMIT_MAX_CLIENTS` defaults to 2048 identities per endpoint. At capacity, new identities receive 429 until entries expire. Use a shared store before running multiple replicas if a deployment-wide quota is required.

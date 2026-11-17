@@ -37,6 +37,9 @@ import type {
   SendChatMessageInput,
 } from './chats.types.js';
 
+import type { ReactionState } from '@university-messenger/events';
+import type { SetReactionInput } from '../domain/message-reactions.js';
+
 const CURSOR_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -319,6 +322,30 @@ class ChatsService {
     }
 
     return { name: file.name, mediaType: file.mediaType, bytes };
+  }
+
+  async setReaction(input: SetReactionInput): Promise<ReactionState> {
+    const { changed, selections, reactions, reactionVersion, recipients } =
+      await this.messagesRepository.setReaction(input);
+
+    if (changed) {
+      this.events.publish({
+        type: WebSocketEventType.Reaction,
+        chatId: input.chatId,
+        messageId: input.messageId,
+        reactionVersion,
+        reactions,
+        selections,
+        recipients,
+      });
+    }
+
+    return {
+      reactionVersion,
+      reactions,
+      myReaction:
+        selections.find(({ userId }) => userId === input.userId)?.type ?? null,
+    };
   }
 
   async changeMessage(input: ChangeChatMessageInput): Promise<ChatMessage> {
