@@ -1,4 +1,5 @@
-import { Injectable, computed, effect, signal } from '@angular/core';
+import { Injectable, computed, effect, inject, signal } from '@angular/core';
+import { LocalStorageService } from './local-storage.service';
 
 type Theme = 'light' | 'dark';
 
@@ -6,6 +7,7 @@ type Theme = 'light' | 'dark';
   providedIn: 'root',
 })
 class ThemeService {
+  private readonly storage = inject(LocalStorageService);
   private readonly storageKey = 'neon-orbs-theme';
   readonly theme = signal<Theme>(this.getInitialTheme());
   readonly isDark = computed(() => this.theme() === 'dark');
@@ -15,7 +17,7 @@ class ThemeService {
       const current = this.theme();
 
       document.documentElement.setAttribute('data-theme', current);
-      localStorage.setItem(this.storageKey, current);
+      this.storage.setItem(this.storageKey, current);
     });
   }
 
@@ -24,7 +26,7 @@ class ThemeService {
   }
 
   private getInitialTheme(): Theme {
-    const saved = localStorage.getItem(this.storageKey);
+    const saved = this.storage.getItem(this.storageKey);
 
     if (saved === 'light' || saved === 'dark') {
       return saved;
