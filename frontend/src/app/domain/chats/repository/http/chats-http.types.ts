@@ -1,10 +1,14 @@
+import type { ReactionState, ReactionType } from '@university-messenger/events';
 interface ChatPersonHttpResponse {
+  defaultReaction?: ReactionType;
   id: string;
   username: string;
   displayName: string;
   avatarUrl?: string | null;
 }
 interface ChatMessageHttpResponse {
+  reply?: { id: string; author: { id: string; displayName: string } | null; preview: string };
+  reactionState?: ReactionState;
   id: string;
   chatId: string;
   senderId: string;
@@ -44,9 +48,10 @@ interface CreateChatHttpRequest {
 }
 interface SendMessageHttpRequest {
   text: string;
+  replyToId?: string;
 }
 
-type SendVoiceHttpRequest = { id: string; mediaType: string; content: string };
+type SendVoiceHttpRequest = { id: string; mediaType: string; content: string; replyToId?: string };
 
 type SharedMediaHttpResponse = {
   photos: number;

@@ -1,0 +1,34 @@
+.message-avatar-slot {
+  flex: 0 0 38px;
+  align-self: flex-start;
+}
+.message-avatar-slot button {
+  display: grid;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.reply-highlight {
+  animation: reply-highlight 1.5s ease-out;
+}
+@keyframes reply-highlight {
+  from {
+    background: #6ab2f23a;
+  }
+  to {
+    background: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reply-highlight {
+    animation: none;
+    background: #6ab2f23a;
+  }
+}
+.reply-composer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 12px 0;
+}

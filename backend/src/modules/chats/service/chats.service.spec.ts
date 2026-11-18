@@ -33,6 +33,7 @@ describe('ChatsService', () => {
       sendMessage: jest.fn(),
       sendVoiceMessage: jest.fn(),
       findMessages: jest.fn(),
+      setReaction: jest.fn(),
       countMedia: jest.fn(),
     };
     service = new ChatsService(chatsRepository, messagesRepository);

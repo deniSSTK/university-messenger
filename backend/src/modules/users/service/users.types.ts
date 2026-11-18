@@ -1,3 +1,5 @@
+import type { ReactionType } from '@university-messenger/events';
+
 type SearchUsersInput = {
   currentUserId: string;
   search: string;
@@ -23,12 +25,14 @@ type UpdateProfileInput = {
   userId: string;
   displayName: string;
   avatarUrl?: string | null;
+  defaultReaction?: ReactionType;
 };
 type ProfileResult = {
   id: string;
   username: string;
   displayName: string;
   avatarUrl: string | null;
+  defaultReaction?: ReactionType;
 };
 
 export type {

@@ -1,3 +1,5 @@
+import type { ReactionType } from '@university-messenger/events';
+import { ChatReactionPicker } from './chat-reaction-picker';
 import { Component, input, output } from '@angular/core';
 import { Dialog } from '../../../../shared/ui/dialog/dialog';
 import { Button } from '../../../../shared/ui/button/button';
@@ -7,7 +9,7 @@ import { FilePicker } from '../../../../shared/ui/file-picker/file-picker';
 import { Avatar } from '../../../../shared/ui/avatar/avatar';
 @Component({
   selector: 'app-chat-profile-editor',
-  imports: [Dialog, Button, Input, FormField, FilePicker, Avatar],
+  imports: [Dialog, Button, Input, FormField, FilePicker, Avatar, ChatReactionPicker],
   template: `<app-dialog heading="Ваш профіль" [locked]="saving()" (closed)="close.emit()">
     <form (submit)="$event.preventDefault(); save.emit()">
       <app-form-field
@@ -38,6 +40,15 @@ import { Avatar } from '../../../../shared/ui/avatar/avatar';
           </button>
         </div>
       }
+      <fieldset class="reaction-preference">
+        <legend>Реакція за замовчуванням</legend>
+        <app-chat-reaction-picker
+          label="Реакція за замовчуванням"
+          [selected]="defaultReaction()"
+          [disabled]="saving()"
+          (picked)="reactionChanged.emit($event)"
+        />
+      </fieldset>
       @if (error()) {
         <p class="error" role="alert">{{ error() }}</p>
       }
@@ -51,6 +62,8 @@ import { Avatar } from '../../../../shared/ui/avatar/avatar';
   styleUrl: './chat-profile-editor.scss',
 })
 class ChatProfileEditor {
+  readonly defaultReaction = input<ReactionType>('HEART');
+  readonly reactionChanged = output<ReactionType>();
   readonly name = input('');
   readonly avatar = input<string | null>(null);
   readonly saving = input(false);

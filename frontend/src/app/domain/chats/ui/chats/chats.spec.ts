@@ -1,5 +1,7 @@
+import type { ReactionState } from '@university-messenger/events';
 import { WebSocketEventType } from '@university-messenger/events';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
+import { Title } from '@angular/platform-browser';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { BehaviorSubject, Subject, of, throwError } from 'rxjs';
 import type { Observable } from 'rxjs';
@@ -49,6 +51,7 @@ describe('chat screen', () => {
     edit: vi.fn(),
     remove: vi.fn(),
     syncHistory: vi.fn(),
+    setReaction: vi.fn<ChatService['setReaction']>(),
     viewer: vi.fn<() => Promise<ChatPerson>>(),
     list: vi.fn<(page: number) => Promise<ChatPage>>(),
     get: vi.fn<(id: string) => Promise<Conversation>>(),
@@ -59,6 +62,8 @@ describe('chat screen', () => {
   };
   const search = vi.fn<(input: SearchUsersInput) => Observable<SearchUsersResult>>();
   const updateProfile = vi.fn();
+  const saveAlias = vi.fn();
+  const deleteAlias = vi.fn();
   const navigate = vi.fn().mockResolvedValue(true);
 
   beforeEach(async () => {
@@ -69,6 +74,10 @@ describe('chat screen', () => {
     api.read.mockResolvedValue(undefined);
     api.syncHistory.mockResolvedValue({ messages: [], nextBefore: null });
     updateProfile.mockReset().mockReturnValue(of(undefined));
+    saveAlias
+      .mockReset()
+      .mockImplementation((targetUserId, alias) => of({ targetUserId, ...alias }));
+    deleteAlias.mockReset().mockReturnValue(of(undefined));
     search.mockReset().mockReturnValue(of({ users: [], page: 1, totalPages: 0 }));
     navigate.mockClear();
     api.viewer.mockResolvedValue(viewer);
@@ -83,7 +92,10 @@ describe('chat screen', () => {
       imports: [Chats],
       providers: [
         { provide: ChatService, useValue: api },
-        { provide: Users, useValue: { search, updateProfile } },
+        {
+          provide: Users,
+          useValue: { search, updateProfile, listAliases: () => of([]), saveAlias, deleteAlias },
+        },
         { provide: ActivatedRoute, useValue: { paramMap: params } },
         { provide: Router, useValue: { navigate } },
         { provide: Auth, useValue: { logout: vi.fn().mockResolvedValue(undefined) } },
@@ -104,6 +116,266 @@ describe('chat screen', () => {
     fixture.detectChanges();
     await settle();
   }
+
+  it('keeps the selected peer’s display name in the tab title despite a nickname or late response', async () => {
+    const title = TestBed.inject(Title);
+    expect(title.getTitle()).toBe('Chats');
+
+    const slow = deferred<Conversation>();
+    api.get.mockImplementation((id) =>
+      id === 'slow'
+        ? slow.promise
+        : Promise.resolve({
+            ...chat(id),
+            person: { ...peer, displayName: 'Олена' },
+          }),
+    );
+
+    await select('slow');
+    await select('fast');
+    expect(title.getTitle()).toBe('Олена');
+
+    component.updateAlias(peer.id, {
+      targetUserId: peer.id,
+      nickname: 'Архітектор',
+      color: 'GREEN',
+    });
+    slow.resolve({ ...chat('slow'), person: { ...peer, id: 'other', displayName: 'Ігор' } });
+    await settle();
+    fixture.detectChanges();
+    expect(title.getTitle()).toBe('Олена');
+
+    params.next(convertToParamMap({}));
+    fixture.detectChanges();
+    expect(title.getTitle()).toBe('Chats');
+  });
+
+  it('applies the configured default from anywhere in the message row and rolls back a failed queued reaction', async () => {
+    const pending = deferred<ReactionState>();
+    const second = deferred<ReactionState>();
+    api.viewer.mockResolvedValue({ ...viewer, defaultReaction: 'FIRE' });
+    api.history.mockResolvedValue({ messages: [message()], nextBefore: null });
+    api.setReaction.mockReturnValueOnce(pending.promise).mockReturnValueOnce(second.promise);
+    await select();
+    const host = fixture.nativeElement as HTMLElement;
+    const row = host.querySelector('.message-row')!;
+    row
+      .querySelector('.message-options')!
+      .dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(api.setReaction).not.toHaveBeenCalled();
+
+    row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(api.setReaction).toHaveBeenCalledWith('a', 'm1', 'FIRE');
+    fixture.detectChanges();
+    expect(host.querySelector('.reaction-pills')?.textContent).toContain('🔥');
+
+    void component.react(component.messages()[0], 'HEART');
+    expect(api.setReaction).toHaveBeenCalledTimes(1);
+    pending.resolve({
+      reactionVersion: 1,
+      reactions: [{ type: 'FIRE', count: 1 }],
+      myReaction: 'FIRE',
+    });
+    await settle();
+    expect(api.setReaction).toHaveBeenLastCalledWith('a', 'm1', 'HEART');
+    second.reject(new Error('Offline'));
+    await settle();
+    expect(component.messageRows()[0].message.reactionState?.myReaction).toBe('FIRE');
+    expect(component.actionError()).toContain('Не вдалося змінити реакцію');
+  });
+
+  it('opens the reaction picker on right-click anywhere in the message row', async () => {
+    api.history.mockResolvedValue({ messages: [message()], nextBefore: null });
+    await select();
+    const host = fixture.nativeElement as HTMLElement;
+    const row = host.querySelector('.message-row')!;
+
+    for (const target of [row, row.querySelector('.message')!]) {
+      const event = new MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 30,
+        clientY: 30,
+      });
+      target.dispatchEvent(event);
+      fixture.detectChanges();
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(row.querySelectorAll('app-chat-reaction-picker button')).toHaveLength(7);
+      row.querySelector<HTMLButtonElement>('.context-backdrop')?.click();
+      fixture.detectChanges();
+    }
+  });
+
+  it('opens the reaction picker with touch hold, but cancels on scroll', async () => {
+    api.history.mockResolvedValue({
+      messages: [{ ...message(), senderId: peer.id }],
+      nextBefore: null,
+    });
+    await select();
+    vi.useFakeTimers();
+    const host = fixture.nativeElement as HTMLElement;
+    const bubble = host.querySelector<HTMLElement>('.message')!;
+    function touch(type: string, x: number): void {
+      const event = new MouseEvent(type, { bubbles: true, clientX: x, clientY: 10 });
+      Object.assign(event, { pointerType: 'touch', isPrimary: true });
+      bubble.dispatchEvent(event);
+    }
+
+    touch('pointerdown', 10);
+    touch('pointermove', 50);
+    vi.advanceTimersByTime(550);
+    fixture.detectChanges();
+    expect(host.querySelector('.message-menu')).toBeNull();
+
+    touch('pointerdown', 10);
+    vi.advanceTimersByTime(550);
+    fixture.detectChanges();
+    expect(host.querySelectorAll('app-chat-reaction-picker button')).toHaveLength(7);
+    bubble.querySelector('button')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(api.setReaction).not.toHaveBeenCalled();
+  });
+
+  it('edits and removes a nickname from the chat menu', async () => {
+    api.history.mockResolvedValue({
+      messages: [{ ...message(), senderId: peer.id }],
+      nextBefore: null,
+    });
+    await select();
+    const host = fixture.nativeElement as HTMLElement;
+    const openEditor = () => {
+      host.querySelector<HTMLButtonElement>('[aria-label="Меню діалогу"]')!.click();
+      fixture.detectChanges();
+      const entry = [...host.querySelectorAll<HTMLButtonElement>('.dialog-menu button')].find(
+        (button) => button.textContent?.includes('Прізвисько'),
+      )!;
+      entry.click();
+      fixture.detectChanges();
+    };
+
+    openEditor();
+    const input = host.querySelector<HTMLInputElement>('#peer-nickname')!;
+    input.value = '  Пелік  ';
+    input.dispatchEvent(new Event('input'));
+    host.querySelector<HTMLButtonElement>('.nickname-swatch[data-nickname-color="GREEN"]')!.click();
+    fixture.detectChanges();
+    expect(host.querySelector('.nickname-preview')?.textContent?.trim()).toBe('Пелік');
+    host
+      .querySelector('app-chat-nickname-editor form')!
+      .dispatchEvent(new Event('submit', { cancelable: true }));
+    await settle();
+    fixture.detectChanges();
+    expect(saveAlias).toHaveBeenCalledWith(peer.id, { nickname: 'Пелік', color: 'GREEN' });
+    expect(host.querySelector('.message-author-line .nickname-badge')?.textContent?.trim()).toBe(
+      'Пелік',
+    );
+
+    openEditor();
+    expect(host.querySelector<HTMLInputElement>('#peer-nickname')?.value).toBe('Пелік');
+    const remove = [
+      ...host.querySelectorAll<HTMLButtonElement>('app-chat-nickname-editor button'),
+    ].find((button) => button.textContent?.includes('Прибрати'))!;
+    remove.click();
+    await settle();
+    fixture.detectChanges();
+    expect(deleteAlias).toHaveBeenCalledWith(peer.id);
+    expect(host.querySelector('.message-author-line .nickname-badge')).toBeNull();
+  });
+
+  it('shows grouped authors, opens and cancels a reply, and sends the selected reference', async () => {
+    const original = {
+      ...message('original', 'Original'),
+      senderId: peer.id,
+      sender: { ...peer, avatarUrl: 'https://example.test/avatar.png' },
+    };
+    api.history.mockResolvedValue({
+      messages: [original, { ...original, id: 'grouped', createdAt: '2026-11-03T00:00:01Z' }],
+      nextBefore: null,
+    });
+    await select();
+    component.updateAlias(peer.id, { targetUserId: peer.id, nickname: 'Пелік', color: 'PINK' });
+    fixture.detectChanges();
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.querySelectorAll('.message-avatar-slot img')).toHaveLength(1);
+    expect(host.querySelectorAll('.message-author')).toHaveLength(1);
+    expect(host.querySelector('.message-author')?.textContent).toContain(peer.displayName);
+    expect(host.querySelector('.message-author-line .nickname-badge')?.textContent).toContain(
+      'Пелік',
+    );
+    expect(
+      host
+        .querySelector('.message-author-line .nickname-badge')
+        ?.getAttribute('data-nickname-color'),
+    ).toBe('PINK');
+
+    const row = host.querySelector('[data-message-id="original"]')!;
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    fixture.detectChanges();
+    expect(row.querySelectorAll('app-chat-reaction-picker button')).toHaveLength(7);
+    const reply = [...row.querySelectorAll<HTMLButtonElement>('.message-menu > button')].find(
+      (button) => button.textContent?.includes('Відповісти'),
+    )!;
+    reply.click();
+    fixture.detectChanges();
+    expect(host.querySelector('.reply-composer')?.textContent).toContain('Original');
+    component.composerKey(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(component.replyTarget()).toBeNull();
+
+    component.beginReply(component.messages()[0]);
+    component.draftChanged('Answer');
+    await component.send();
+    expect(api.send).toHaveBeenCalledWith('a', 'Answer', 'original');
+    expect(component.replyTarget()).toBeNull();
+  });
+
+  it('loads older history to jump to a visible reply target', async () => {
+    api.history
+      .mockResolvedValueOnce({
+        messages: [
+          { ...message('answer'), reply: { id: 'original', author: peer, preview: 'Old text' } },
+        ],
+        nextBefore: 'older',
+      })
+      .mockResolvedValueOnce({
+        messages: [message('original', 'Old text', '2026-11-02T00:00:00Z')],
+        nextBefore: null,
+      });
+    await select();
+    const host = fixture.nativeElement as HTMLElement;
+    const quote = host.querySelector<HTMLButtonElement>('button.reply-quote')!;
+    expect(quote.textContent).toContain('Old text');
+    quote.click();
+    await settle();
+    fixture.detectChanges();
+    await settle();
+    fixture.detectChanges();
+    expect(api.history).toHaveBeenCalledWith('a', 'older');
+    expect(host.querySelector('[data-message-id="original"].reply-highlight')).not.toBeNull();
+  });
+
+  it('applies live reaction state and ignores an older event for the same message', async () => {
+    api.history.mockResolvedValue({ messages: [message()], nextBefore: null });
+    await select();
+    const notify = api.watch.mock.calls[0][0];
+    const react = (reactionVersion: number, count: number) =>
+      notify({
+        type: WebSocketEventType.Reaction,
+        chatId: 'a',
+        reaction: {
+          messageId: 'm1',
+          reactionVersion,
+          reactions: [{ type: 'HEART', count }],
+          myReaction: null,
+        },
+      });
+
+    react(2, 2);
+    react(1, 1);
+    fixture.detectChanges();
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('.reaction-count')?.textContent?.trim(),
+    ).toBe('2');
+  });
 
   it('debounces search, cancels old results and restores chats for whitespace', async () => {
     const old = new Subject<SearchUsersResult>();

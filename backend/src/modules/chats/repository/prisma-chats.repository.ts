@@ -25,6 +25,16 @@ import {
 } from '../domain/shared-media.js';
 import type { MediaCategory, MediaCounts } from '../domain/shared-media.js';
 
+import type {
+  ReactionCount,
+  ReactionState,
+  ReactionType,
+} from '@university-messenger/events';
+import type {
+  SetReactionInput,
+  ReactionSnapshot,
+} from '../domain/message-reactions.js';
+
 const sharedAttachment: Prisma.AttachmentWhereInput = {
   fileName: { not: null },
   OR: [{ fileKey: { not: null } }, { fileData: { not: null } }],
@@ -59,6 +69,7 @@ const participantSelect = {
 } as const;
 
 const messageSelect = {
+  reactionVersion: true,
   id: true,
   chatId: true,
   text: true,
@@ -76,6 +87,17 @@ const messageSelect = {
     },
   },
   sender: { select: participantSelect },
+  replyTo: {
+    select: {
+      id: true,
+      chatId: true,
+      deletedAt: true,
+      createdAt: true,
+      text: true,
+      sender: { select: { id: true, displayName: true } },
+      attachment: { select: { type: true, fileName: true, fileType: true } },
+    },
+  },
 } as const;
 
 function selectPrivateChat(currentUserId: string) {
@@ -105,8 +127,16 @@ type ChatPageRow = {
 
 function mapMessage(
   message: Prisma.MessageGetPayload<{ select: typeof messageSelect }>,
+  reactionState?: ReactionState,
+  clearedThrough?: Date | null,
 ): ChatMessage {
   const file = message.attachment;
+  const reply = message.replyTo;
+  const visibleReply =
+    reply &&
+    reply.chatId === message.chatId &&
+    !reply.deletedAt &&
+    (!clearedThrough || reply.createdAt > clearedThrough);
 
   return {
     id: message.id,
@@ -117,6 +147,30 @@ function mapMessage(
     createdAt: message.createdAt,
     editedAt: message.editedAt,
     readAt: message.readAt,
+    ...(reply && clearedThrough !== undefined
+      ? {
+          reply: {
+            id: reply.id,
+            author: visibleReply ? reply.sender : null,
+            preview: visibleReply
+              ? [...replyPreviewText(reply.text, reply.attachment).trim()]
+                  .slice(0, 160)
+                  .join('')
+              : '',
+          },
+        }
+      : {}),
+    ...(reactionState
+      ? { reactionState }
+      : message.reactionVersion === 0
+        ? {
+            reactionState: {
+              reactionVersion: 0,
+              reactions: [],
+              myReaction: null,
+            },
+          }
+        : {}),
     attachment: file?.fileName
       ? {
           name: file.fileName,
@@ -126,6 +180,33 @@ function mapMessage(
         }
       : null,
   };
+}
+
+function replyPreviewText(
+  text: string,
+  file: {
+    type: string;
+    fileName: string | null;
+    fileType: string | null;
+  } | null,
+): string {
+  if (!file) {
+    return text;
+  }
+
+  if (file.type === 'VOICE') {
+    return 'Голосове повідомлення';
+  }
+
+  if (file.fileType?.startsWith('image/')) {
+    return 'Фото';
+  }
+
+  if (file.fileType?.startsWith('video/')) {
+    return 'Відео';
+  }
+
+  return file.fileName ?? 'Файл';
 }
 
 function mapPrivateChat(chat: PrivateChatRow): PrivateChat | null {
@@ -142,7 +223,7 @@ async function visibleHistory(
   database: Prisma.TransactionClient,
   chatId: string,
   userId: string,
-): Promise<Prisma.MessageWhereInput> {
+): Promise<{ createdAt?: { gt: Date } }> {
   const membership = await database.chatMember.findFirst({
     where: { chatId, userId, deletedAt: null, chat: { deletedAt: null } },
     select: { historyClearedThrough: true },
@@ -155,6 +236,52 @@ async function visibleHistory(
   return membership.historyClearedThrough
     ? { createdAt: { gt: membership.historyClearedThrough } }
     : {};
+}
+
+async function reactionStates(
+  database: Prisma.TransactionClient,
+  messages: { id: string; reactionVersion: number }[],
+  userId: string,
+): Promise<Map<string, ReactionState>> {
+  const states = new Map<string, ReactionState>(
+    messages.map(({ id, reactionVersion }) => [
+      id,
+      { reactionVersion, reactions: [], myReaction: null },
+    ]),
+  );
+  const reacted = messages.filter(({ reactionVersion }) => reactionVersion > 0);
+
+  if (!reacted.length) {
+    return states;
+  }
+
+  const rows = await database.$queryRaw<
+    {
+      messageId: string;
+      type: ReactionType;
+      count: number;
+      mine: boolean;
+    }[]
+  >`
+    SELECT "messageId", "type", count(*)::int AS count, bool_or("userId" = ${userId}::uuid) AS mine
+    FROM "MessageReaction"
+    WHERE "messageId" IN (${Prisma.join(reacted.map(({ id }) => Prisma.sql`${id}::uuid`))})
+    GROUP BY "messageId", "type"
+  `;
+
+  for (const row of rows) {
+    const state = states.get(row.messageId);
+
+    if (state) {
+      state.reactions.push({ type: row.type, count: row.count });
+
+      if (row.mine) {
+        state.myReaction = row.type;
+      }
+    }
+  }
+
+  return states;
 }
 
 @Injectable()
@@ -452,7 +579,29 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
             throw new ChatNotFoundError();
           }
 
-          return { message: mapMessage(existing), created: false };
+          return {
+            message: mapMessage(
+              existing,
+              undefined,
+              membership.historyClearedThrough,
+            ),
+            created: false,
+          };
+        }
+      }
+
+      if (input.replyToId) {
+        const [target] = await transaction.$queryRaw<{ id: string }[]>`
+          SELECT "id" FROM "Message"
+          WHERE "id" = ${input.replyToId}::uuid AND "chatId" = ${input.chatId}::uuid
+            AND "deletedAt" IS NULL
+            AND (${membership.historyClearedThrough}::timestamptz IS NULL
+              OR "createdAt" > ${membership.historyClearedThrough}::timestamptz)
+          FOR SHARE
+        `;
+
+        if (!target) {
+          throw new ChatNotFoundError();
         }
       }
 
@@ -495,6 +644,9 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
               }
             : {}),
           ...(voice ? { voiceRequestId: voice.id } : {}),
+          ...(input.replyToId
+            ? { replyTo: { connect: { id: input.replyToId } } }
+            : {}),
           createdAt: activity.activityAt,
         },
         select: messageSelect,
@@ -514,7 +666,14 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
         data: { hiddenAt: null },
       });
 
-      return { message: mapMessage(message), created: true };
+      return {
+        message: mapMessage(
+          message,
+          undefined,
+          membership.historyClearedThrough,
+        ),
+        created: true,
+      };
     });
   }
 
@@ -551,6 +710,93 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
     };
   }
 
+  async setReaction(input: SetReactionInput): Promise<ReactionSnapshot> {
+    return this.prisma.$transaction(async (transaction) => {
+      const { chatId, messageId, userId, type } = input;
+      const [message] = await transaction.$queryRaw<
+        { createdAt: Date; reactionVersion: number }[]
+      >`
+        SELECT message."createdAt", message."reactionVersion"
+        FROM "Message" AS message
+        JOIN "Chat" AS chat ON chat."id" = message."chatId"
+        JOIN "ChatMember" AS member ON member."chatId" = chat."id"
+        WHERE message."id" = ${messageId}::uuid AND chat."id" = ${chatId}::uuid
+          AND chat."deletedAt" IS NULL AND message."deletedAt" IS NULL
+          AND member."userId" = ${userId}::uuid AND member."deletedAt" IS NULL
+          AND (member."historyClearedThrough" IS NULL OR message."createdAt" > member."historyClearedThrough")
+        FOR UPDATE OF chat, message, member
+      `;
+
+      if (!message) {
+        throw new ChatNotFoundError();
+      }
+
+      const key = { userId, messageId };
+      const previous = await transaction.messageReaction.findUnique({
+        where: { userId_messageId: key },
+        select: { type: true },
+      });
+      const changed = (previous?.type ?? null) !== type;
+
+      if (changed) {
+        if (type === null) {
+          await transaction.messageReaction.delete({
+            where: { userId_messageId: key },
+          });
+        } else {
+          await transaction.messageReaction.upsert({
+            where: { userId_messageId: key },
+            create: { ...key, type },
+            update: { type },
+          });
+        }
+
+        await transaction.message.update({
+          where: { id: messageId },
+          data: { reactionVersion: { increment: 1 } },
+        });
+      }
+
+      const selections = await transaction.messageReaction.findMany({
+        where: { messageId },
+        select: { userId: true, type: true },
+      });
+      const counts = new Map<ReactionType, number>();
+
+      for (const selection of selections) {
+        counts.set(selection.type, (counts.get(selection.type) ?? 0) + 1);
+      }
+
+      const reactions: ReactionCount[] = [...counts].map(([type, count]) => ({
+        type,
+        count,
+      }));
+      const recipients = changed
+        ? (
+            await transaction.chatMember.findMany({
+              where: {
+                chatId,
+                deletedAt: null,
+                OR: [
+                  { historyClearedThrough: null },
+                  { historyClearedThrough: { lt: message.createdAt } },
+                ],
+              },
+              select: { userId: true },
+            })
+          ).map(({ userId }) => userId)
+        : [];
+
+      return {
+        reactionVersion: message.reactionVersion + Number(changed),
+        reactions,
+        selections,
+        recipients,
+        changed,
+      };
+    });
+  }
+
   async changeMessage(input: ChangeMessageInput): Promise<ChatMessage | null> {
     return this.prisma.$transaction(async (transaction) => {
       const visible = await visibleHistory(
@@ -585,7 +831,25 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
         select: messageSelect,
       });
 
-      return mapMessage(message);
+      if (input.text === null) {
+        await transaction.messageReaction.deleteMany({
+          where: { messageId: input.messageId },
+        });
+
+        return mapMessage(message);
+      }
+
+      const reactions = await reactionStates(
+        transaction,
+        [message],
+        input.userId,
+      );
+
+      return mapMessage(
+        message,
+        reactions.get(message.id),
+        visible.createdAt?.gt ?? null,
+      );
     });
   }
 
@@ -663,51 +927,65 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
   }
 
   async findMessages(input: FindMessagesInput): Promise<FindMessagesResult> {
-    const visible = await visibleHistory(
-      this.prisma,
-      input.chatId,
-      input.userId,
-    );
-    const category = input.category;
-    const cursorFilter = input.cursor
-      ? {
-          OR: [
-            { createdAt: { lt: input.cursor.createdAt } },
-            {
-              createdAt: input.cursor.createdAt,
-              id: { lt: input.cursor.id },
-            },
-          ],
-        }
-      : {};
-
-    const messages = await this.prisma.message.findMany({
-      where: {
-        chatId: input.chatId,
-        deletedAt: null,
-        ...visible,
-        ...cursorFilter,
-        ...(category
+    return this.prisma.$transaction(
+      async (transaction) => {
+        const visible = await visibleHistory(
+          transaction,
+          input.chatId,
+          input.userId,
+        );
+        const category = input.category;
+        const cursorFilter = input.cursor
           ? {
-              attachment: {
-                AND: [sharedAttachment, mediaFilters[category]],
-                type: category === 'voice' ? 'VOICE' : 'FILE',
-              },
+              OR: [
+                { createdAt: { lt: input.cursor.createdAt } },
+                {
+                  createdAt: input.cursor.createdAt,
+                  id: { lt: input.cursor.id },
+                },
+              ],
             }
-          : {}),
+          : {};
+
+        const messages = await transaction.message.findMany({
+          where: {
+            chatId: input.chatId,
+            deletedAt: null,
+            ...visible,
+            ...cursorFilter,
+            ...(input.messageId ? { id: input.messageId } : {}),
+            ...(category
+              ? {
+                  attachment: {
+                    AND: [sharedAttachment, mediaFilters[category]],
+                    type: category === 'voice' ? 'VOICE' : 'FILE',
+                  },
+                }
+              : {}),
+          },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: input.take + 1,
+          select: messageSelect,
+        });
+
+        const hasMore = messages.length > input.take;
+        const page = hasMore ? messages.slice(0, input.take) : messages;
+
+        const states = await reactionStates(transaction, page, input.userId);
+
+        return {
+          items: page.map((message) =>
+            mapMessage(
+              message,
+              states.get(message.id),
+              visible.createdAt?.gt ?? null,
+            ),
+          ),
+          hasMore,
+        };
       },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: input.take + 1,
-      select: messageSelect,
-    });
-
-    const hasMore = messages.length > input.take;
-    const page = hasMore ? messages.slice(0, input.take) : messages;
-
-    return {
-      items: page.map(mapMessage),
-      hasMore,
-    };
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
   }
 }
 

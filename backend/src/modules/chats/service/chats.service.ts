@@ -37,6 +37,9 @@ import type {
   SendChatMessageInput,
 } from './chats.types.js';
 
+import type { ReactionState } from '@university-messenger/events';
+import type { SetReactionInput } from '../domain/message-reactions.js';
+
 const CURSOR_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -173,6 +176,7 @@ class ChatsService {
     this.events.publish({
       type: WebSocketEventType.Changed,
       chatId: input.chatId,
+      ...(message.reply ? { messageId: message.id } : {}),
     });
 
     return this.presentMessage(message);
@@ -210,6 +214,7 @@ class ChatsService {
           chatId: input.chatId,
           senderId: input.senderId,
           text: name,
+          ...(input.replyToId ? { replyToId: input.replyToId } : {}),
           file: {
             name,
             mediaType: input.mediaType,
@@ -247,6 +252,7 @@ class ChatsService {
           chatId: input.chatId,
           senderId: input.senderId,
           text: 'Голосове повідомлення',
+          ...(input.replyToId ? { replyToId: input.replyToId } : {}),
           file: {
             key,
             name: `voice.${audio.extension}`,
@@ -282,7 +288,11 @@ class ChatsService {
     }
 
     if (result.created) {
-      this.events.publish({ type: WebSocketEventType.Changed, chatId });
+      this.events.publish({
+        type: WebSocketEventType.Changed,
+        chatId,
+        ...(result.message.reply ? { messageId: result.message.id } : {}),
+      });
     } else {
       await storage.remove(key).catch(() => undefined);
     }
@@ -319,6 +329,30 @@ class ChatsService {
     }
 
     return { name: file.name, mediaType: file.mediaType, bytes };
+  }
+
+  async setReaction(input: SetReactionInput): Promise<ReactionState> {
+    const { changed, selections, reactions, reactionVersion, recipients } =
+      await this.messagesRepository.setReaction(input);
+
+    if (changed) {
+      this.events.publish({
+        type: WebSocketEventType.Reaction,
+        chatId: input.chatId,
+        messageId: input.messageId,
+        reactionVersion,
+        reactions,
+        selections,
+        recipients,
+      });
+    }
+
+    return {
+      reactionVersion,
+      reactions,
+      myReaction:
+        selections.find(({ userId }) => userId === input.userId)?.type ?? null,
+    };
   }
 
   async changeMessage(input: ChangeChatMessageInput): Promise<ChatMessage> {
@@ -439,6 +473,26 @@ class ChatsService {
   }
   private async presentMessage(message: ChatMessage): Promise<ChatMessage> {
     return { ...message, sender: await this.presentPerson(message.sender) };
+  }
+
+  async liveReply(chatId: string, messageId: string, userId: string) {
+    try {
+      const { items } = await this.messagesRepository.findMessages({
+        chatId,
+        messageId,
+        userId,
+        take: 1,
+        cursor: null,
+      });
+
+      return items[0]?.reply;
+    } catch (error: unknown) {
+      if (error instanceof ChatNotFoundError) {
+        return undefined;
+      }
+
+      throw error;
+    }
   }
 
   async isActiveMember(chatId: string, userId: string): Promise<boolean> {

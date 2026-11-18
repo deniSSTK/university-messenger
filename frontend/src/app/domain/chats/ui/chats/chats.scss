@@ -330,12 +330,13 @@
   min-height: 0;
 }
 .messages {
+  --message-gutter: 24px;
   flex: 1;
   min-width: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   overflow-anchor: none;
-  padding: 12px 24px 10px;
+  padding: 12px var(--message-gutter) 10px;
 }
 .history-content {
   display: flex;
@@ -367,6 +368,8 @@
 .message-row {
   display: flex;
   margin-top: 8px;
+  margin-inline: calc(-1 * var(--message-gutter));
+  padding-inline: var(--message-gutter);
 }
 .message-row.grouped {
   margin-top: 3px;
@@ -544,7 +547,8 @@
     display: inline-flex;
   }
   .messages {
-    padding: 8px 12px;
+    --message-gutter: 12px;
+    padding: 8px var(--message-gutter);
   }
   .composer-panel {
     padding-right: 6px;

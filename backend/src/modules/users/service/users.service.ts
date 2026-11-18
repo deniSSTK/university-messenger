@@ -1,3 +1,4 @@
+import type { UserAlias } from '../domain/user-alias.js';
 import { randomUUID } from 'node:crypto';
 import type { ObjectStorage } from '../../media/domain/object-storage.port.js';
 import { MediaUnavailableError } from '../../media/domain/object-storage.port.js';
@@ -10,6 +11,25 @@ import type { UsersRepository } from '../domain/users.repository.js';
 import type { SearchUsersInput, SearchUsersResult } from './users.types.js';
 
 class UsersService {
+  listAliases(ownerId: string): Promise<UserAlias[]> {
+    return this.repository.listAliases(ownerId);
+  }
+
+  saveAlias(ownerId: string, alias: UserAlias): Promise<UserAlias | null> {
+    if (ownerId === alias.targetUserId.toLowerCase()) {
+      return Promise.resolve(null);
+    }
+
+    return this.repository.saveAlias(ownerId, {
+      ...alias,
+      nickname: alias.nickname.trim(),
+    });
+  }
+
+  deleteAlias(ownerId: string, targetUserId: string): Promise<void> {
+    return this.repository.deleteAlias(ownerId, targetUserId);
+  }
+
   constructor(
     private readonly repository: UsersRepository,
     private readonly storage?: ObjectStorage,
@@ -53,6 +73,9 @@ class UsersService {
       result = await this.repository.updateProfile({
         userId: input.userId,
         displayName,
+        ...(input.defaultReaction
+          ? { defaultReaction: input.defaultReaction }
+          : {}),
         ...(key !== undefined ? { avatarKey: key, avatarUrl: null } : {}),
       });
     } catch (error: unknown) {
@@ -78,6 +101,9 @@ class UsersService {
       id: result.profile.id,
       username: result.profile.username,
       displayName: result.profile.displayName,
+      ...(result.profile.defaultReaction
+        ? { defaultReaction: result.profile.defaultReaction }
+        : {}),
       avatarUrl: (await avatarUrl(result.profile, this.storage)) ?? null,
     };
   }

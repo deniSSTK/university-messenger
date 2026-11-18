@@ -1,3 +1,5 @@
+import type { ReactionState } from '@university-messenger/events';
+
 type ChatParticipant = {
   id: string;
   username: string;
@@ -7,6 +9,12 @@ type ChatParticipant = {
 };
 
 type VoiceMetadata = { durationMs: number; waveform: number[] };
+
+type ReplyPreview = {
+  id: string;
+  author: { id: string; displayName: string } | null;
+  preview: string;
+};
 
 type ChatMessage = {
   id: string;
@@ -23,6 +31,8 @@ type ChatMessage = {
   } | null;
   editedAt: Date | null;
   readAt?: Date | null;
+  reactionState?: ReactionState;
+  reply?: ReplyPreview;
 };
 
 type PrivateChat = {
@@ -50,5 +60,6 @@ export type {
   ChatParticipant,
   MessageCursor,
   PrivateChat,
+  ReplyPreview,
   VoiceMetadata,
 };

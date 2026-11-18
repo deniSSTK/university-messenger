@@ -6,8 +6,8 @@ import { Chats } from './domain/chats/ui/chats/chats';
 
 const routes: Routes = [
   { path: '', redirectTo: 'chats', pathMatch: 'full' },
-  { path: 'login', component: Login },
-  { path: 'register', component: Register },
+  { path: 'login', component: Login, title: 'Log in' },
+  { path: 'register', component: Register, title: 'Register' },
   {
     path: 'chats',
     component: Chats,

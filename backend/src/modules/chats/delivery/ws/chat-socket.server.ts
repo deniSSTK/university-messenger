@@ -1,3 +1,4 @@
+import type { ReplyPreview } from '../../domain/chats.models.js';
 import { WebSocketEventType } from '@university-messenger/events';
 import {
   Injectable,
@@ -228,9 +229,41 @@ class ChatSocketServer implements OnApplicationBootstrap, OnModuleDestroy {
   }
 
   private async broadcast(event: ChatEvent): Promise<void> {
+    const replies = new Map<string, Promise<ReplyPreview | undefined>>();
+    const payloadFor = async (userId: string) => {
+      if (event.type !== WebSocketEventType.Changed || !event.messageId) {
+        return event;
+      }
+
+      let lookup = replies.get(userId);
+
+      if (!lookup) {
+        lookup = this.chats.liveReply(event.chatId, event.messageId, userId);
+        replies.set(userId, lookup);
+      }
+
+      const reply = await lookup;
+
+      return reply
+        ? {
+            type: event.type,
+            chatId: event.chatId,
+            messageId: event.messageId,
+            reply,
+          }
+        : { type: event.type, chatId: event.chatId };
+    };
+
     await Promise.all(
       [...this.connections].map(async ([client, connection]) => {
         try {
+          if (
+            event.type === WebSocketEventType.Reaction &&
+            !event.recipients.includes(connection.userId)
+          ) {
+            return;
+          }
+
           if (!(await this.validate(connection))) {
             client.close(4001, 'Session expired');
 
@@ -241,7 +274,21 @@ class ChatSocketServer implements OnApplicationBootstrap, OnModuleDestroy {
             client.readyState === WebSocket.OPEN &&
             (await this.chats.isActiveMember(event.chatId, connection.userId))
           ) {
-            client.send(JSON.stringify(event));
+            const payload =
+              event.type === WebSocketEventType.Reaction
+                ? {
+                    type: event.type,
+                    chatId: event.chatId,
+                    messageId: event.messageId,
+                    reactionVersion: event.reactionVersion,
+                    reactions: event.reactions,
+                    myReaction:
+                      event.selections.find(
+                        ({ userId }) => userId === connection.userId,
+                      )?.type ?? null,
+                  }
+                : await payloadFor(connection.userId);
+            client.send(JSON.stringify(payload));
           }
         } catch {
           client.close(1011, 'Connection failed');

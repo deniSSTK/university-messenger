@@ -1,9 +1,12 @@
+import type { ReactionType } from '@university-messenger/events';
+
 type PublicUser = {
   id: string;
   email: string;
   username: string;
   displayName: string;
   avatarUrl?: string | null;
+  defaultReaction?: ReactionType;
   avatarKey?: string | null;
   createdAt: Date;
   updatedAt: Date;

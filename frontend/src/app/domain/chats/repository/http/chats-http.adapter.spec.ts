@@ -38,6 +38,7 @@ const details = { id: chatId, createdAt: date, recipient: peer };
 const mappedMessage = {
   id: message.id,
   senderId: owner.id,
+  sender: owner,
   text: message.text,
   createdAt: date,
   editedAt: null,

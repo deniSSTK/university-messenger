@@ -1,4 +1,5 @@
-import { WebSocketEventType } from '@university-messenger/events';
+import { WebSocketEventType, isReactionType } from '@university-messenger/events';
+import type { ReactionCount, ReactionState } from '@university-messenger/events';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -8,6 +9,50 @@ import { environment } from '../../../../../environments/environment';
 import { encodeBase64 } from './file-content';
 import { ChatRepositoryError } from '../chats.repository';
 import type { ActivityRepository, ActivityRecord, FileRecord } from '../activity.repository';
+
+function parseReaction(value: object): (ReactionState & { messageId: string }) | null {
+  if (
+    !('messageId' in value) ||
+    typeof value.messageId !== 'string' ||
+    !('reactionVersion' in value) ||
+    typeof value.reactionVersion !== 'number' ||
+    !Number.isSafeInteger(value.reactionVersion) ||
+    value.reactionVersion < 0 ||
+    !('myReaction' in value) ||
+    (value.myReaction !== null && !isReactionType(value.myReaction)) ||
+    !('reactions' in value) ||
+    !Array.isArray(value.reactions)
+  ) {
+    return null;
+  }
+
+  const reactions: ReactionCount[] = [];
+  const entries: unknown[] = value.reactions;
+
+  for (const entry of entries) {
+    if (
+      !entry ||
+      typeof entry !== 'object' ||
+      !('type' in entry) ||
+      !isReactionType(entry.type) ||
+      !('count' in entry) ||
+      typeof entry.count !== 'number' ||
+      !Number.isSafeInteger(entry.count) ||
+      entry.count < 1
+    ) {
+      return null;
+    }
+
+    reactions.push({ type: entry.type, count: entry.count });
+  }
+
+  return {
+    messageId: value.messageId,
+    reactionVersion: value.reactionVersion,
+    reactions,
+    myReaction: value.myReaction,
+  };
+}
 
 @Injectable({ providedIn: 'root' })
 class ActivityHttpAdapter implements ActivityRepository {
@@ -44,6 +89,12 @@ class ActivityHttpAdapter implements ActivityRepository {
           } else if ('chatId' in event && typeof event.chatId === 'string') {
             if (event.type === WebSocketEventType.Changed) {
               listener({ type: WebSocketEventType.Changed, chatId: event.chatId });
+            } else if (event.type === WebSocketEventType.Reaction) {
+              const reaction = parseReaction(event);
+
+              if (reaction) {
+                listener({ type: WebSocketEventType.Reaction, chatId: event.chatId, reaction });
+              }
             } else if (
               event.type === WebSocketEventType.Typing &&
               'userId' in event &&
@@ -126,6 +177,7 @@ class ActivityHttpAdapter implements ActivityRepository {
       await firstValueFrom(
         this.http.post(`${environment.apiUrl}/chats/${encodeURIComponent(chatId)}/attachments`, {
           name: file.name,
+          ...(file.replyToId ? { replyToId: file.replyToId } : {}),
           mediaType: file.mediaType,
           content: encodeBase64(file.bytes),
         }),

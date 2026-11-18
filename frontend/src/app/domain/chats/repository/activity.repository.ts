@@ -1,3 +1,4 @@
+import type { ReactionState } from '@university-messenger/events';
 import { WebSocketEventType } from '@university-messenger/events';
 import { InjectionToken } from '@angular/core';
 type ActivityRecord = {
@@ -5,12 +6,14 @@ type ActivityRecord = {
     | WebSocketEventType.Ready
     | WebSocketEventType.Offline
     | WebSocketEventType.Changed
-    | WebSocketEventType.Typing;
+    | WebSocketEventType.Typing
+    | WebSocketEventType.Reaction;
   chatId?: string;
   userId?: string;
   typing?: boolean;
+  reaction?: ReactionState & { messageId: string };
 };
-type FileRecord = { name: string; mediaType: string; bytes: Uint8Array };
+type FileRecord = { name: string; mediaType: string; bytes: Uint8Array; replyToId?: string };
 interface ActivityRepository {
   upload(chatId: string, file: FileRecord): Promise<void>;
   download(chatId: string, messageId: string): Promise<FileRecord>;

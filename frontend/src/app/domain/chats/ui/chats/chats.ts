@@ -1,3 +1,4 @@
+import type { ReactionState, ReactionType } from '@university-messenger/events';
 import { WebSocketEventType } from '@university-messenger/events';
 import { FilePicker } from '../../../../shared/ui/file-picker/file-picker';
 import { Avatar } from '../../../../shared/ui/avatar/avatar';
@@ -9,9 +10,11 @@ import { IconBack } from '../../../../shared/ui/icons/back';
 import { IconSearch } from '../../../../shared/ui/icons/search';
 import { IconMenu } from '../../../../shared/ui/icons/menu';
 import { IconChat } from '../../../../shared/ui/icons/chat';
+import { IconEdit } from '../../../../shared/ui/icons/edit';
 import { IconMore } from '../../../../shared/ui/icons/more';
 import { IconChevronDown } from '../../../../shared/ui/icons/chevron-down';
 import { IconClose } from '../../../../shared/ui/icons/close';
+import { ChatNicknameEditor } from './chat-nickname-editor';
 import { IconSun } from '../../../../shared/ui/icons/sun';
 import { IconMoon } from '../../../../shared/ui/icons/moon';
 import { ThemeService } from '../../../../core/services/theme.service';
@@ -24,9 +27,11 @@ import {
   ElementRef,
   ViewChild,
   computed,
+  effect,
   inject,
   signal,
 } from '@angular/core';
+import { Title } from '@angular/platform-browser';
 import { ActivatedRoute, Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject, catchError, map, of, switchMap, timer, firstValueFrom } from 'rxjs';
@@ -34,6 +39,7 @@ import { countCodePoints } from '../../../../core/text/unicode';
 import { Auth } from '../../../auth/service/auth';
 import { authErrorMessage } from '../../../auth/ui/auth-form.utils';
 import { Users, UserSearchValidationError } from '../../../users/service/users';
+import type { Nickname, UserNickname } from '../../../users/service/users';
 import { MESSAGE_TEXT_MAX_LENGTH } from '../../chats.constants';
 import { ChatService, ChatError } from '../../service/chats';
 import type { ChatPerson, ChatMessage, Conversation } from '../../service/chats.types';
@@ -49,14 +55,20 @@ function personView(person: ChatPerson): PersonView {
     username: person.username,
     displayName: person.displayName,
     avatarUrl: person.avatarUrl ?? null,
+    ...(person.defaultReaction ? { defaultReaction: person.defaultReaction } : {}),
   };
 }
 function messageView(message: ChatMessage): MessageView {
   return {
     id: message.id,
     senderId: message.senderId,
+    ...(message.sender ? { sender: personView(message.sender) } : {}),
+    ...(message.reply
+      ? { reply: { ...message.reply, author: message.reply.author && { ...message.reply.author } } }
+      : {}),
     text: message.text,
     createdAt: message.createdAt,
+    ...(message.reactionState ? { reactionState: message.reactionState } : {}),
     ...(message.editedAt !== undefined ? { editedAt: message.editedAt } : {}),
     ...(message.readAt !== undefined ? { readAt: message.readAt } : {}),
     ...(message.attachment !== undefined
@@ -89,8 +101,40 @@ function conversationView(chat: Conversation): ConversationView {
     ...(chat.unreadCount !== undefined ? { unreadCount: chat.unreadCount } : {}),
   };
 }
+function withLatestReaction(message: MessageView, known: MessageView | undefined): MessageView {
+  const state = known?.reactionState;
+  return state && state.reactionVersion > (message.reactionState?.reactionVersion ?? -1)
+    ? { ...message, reactionState: state }
+    : message;
+}
+
+function optimisticReaction(
+  state: ReactionState | undefined,
+  next: ReactionType | null,
+): ReactionState {
+  const counts = new Map(state?.reactions.map(({ type, count }) => [type, count]));
+  const previous = state?.myReaction;
+
+  if (previous) {
+    counts.set(previous, (counts.get(previous) ?? 1) - 1);
+  }
+  if (next) {
+    counts.set(next, (counts.get(next) ?? 0) + 1);
+  }
+
+  return {
+    reactionVersion: state?.reactionVersion ?? 0,
+    myReaction: next,
+    reactions: [...counts].flatMap(([type, count]) => (count > 0 ? [{ type, count }] : [])),
+  };
+}
+
 function mergeMessages(current: MessageView[], incoming: MessageView[]) {
-  const unique = new Map([...current, ...incoming].map((message) => [message.id, message]));
+  const unique = new Map(current.map((message) => [message.id, message]));
+  for (const message of incoming) {
+    unique.set(message.id, withLatestReaction(message, unique.get(message.id)));
+  }
+
   return [...unique.values()].sort(
     (left, right) =>
       left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id),
@@ -109,6 +153,7 @@ function mergeMessages(current: MessageView[], incoming: MessageView[]) {
     IconClose,
     IconChevronDown,
     IconMore,
+    IconEdit,
     IconChat,
     IconMenu,
     IconSearch,
@@ -121,9 +166,10 @@ function mergeMessages(current: MessageView[], incoming: MessageView[]) {
     ChatAccountMenu,
     ChatProfileEditor,
     ChatPeerProfile,
+    ChatNicknameEditor,
   ],
   templateUrl: './chats.html',
-  styleUrls: ['./chats.scss', './chats-activity.scss'],
+  styleUrls: ['./chats.scss', './chats-activity.scss', './chats-replies.scss'],
 })
 class Chats {
   private auth = inject(Auth);
@@ -131,6 +177,7 @@ class Chats {
   private route = inject(ActivatedRoute);
   private service = inject(ChatService);
   private users = inject(Users);
+  private readonly title = inject(Title);
   private destroy = inject(DestroyRef);
   readonly theme = inject(ThemeService);
   readonly drafts = inject(ChatDrafts);
@@ -141,7 +188,8 @@ class Chats {
   private destroyed = false;
   private listPage = 0;
   @ViewChild('messageViewport') private viewport?: ElementRef<HTMLElement>;
-  @ViewChild('composerInput') private composerInput?: ElementRef<HTMLTextAreaElement>;
+  @ViewChild('composerInput', { read: ElementRef })
+  private composerInput?: ElementRef<HTMLTextAreaElement>;
   private historyRetry: 'older' | 'refresh' = 'refresh';
   private latestFetchedMessageId: string | null = null;
   private listRetryMore = false;
@@ -153,9 +201,16 @@ class Chats {
   readonly actionBusy = signal(false);
   readonly actionError = signal('');
   readonly peerProfileOpen = signal(false);
+  readonly nicknameEditorOpen = signal(false);
+  readonly aliases = signal(new Map<string, Nickname>());
+  readonly replyTarget = signal<MessageView | null>(null);
+  readonly highlightedReplyId = signal<string | null>(null);
+  private replyNavigation = 0;
+  private replyHighlightTimer?: ReturnType<typeof setTimeout>;
   readonly peerMediaRevision = signal(0);
   readonly profileOpen = signal(false);
   readonly profileName = signal('');
+  readonly profileReaction = signal<ReactionType>('HEART');
   readonly profileAvatar = signal<string | null>(null);
   readonly avatarModified = signal(false);
   readonly profileSaving = signal(false);
@@ -174,14 +229,24 @@ class Chats {
   readonly profileError = signal('');
   readonly showScrollDown = signal(false);
 
+  private readonly reactionIntents = signal(new Map<string, ReactionType | null>());
+  private readonly reactionRequests = new Set<string>();
   readonly messageRows = computed(() => {
     const messages = this.messages();
     return messages.map((message, index) => {
       const previous = messages[index - 1];
       const newDay =
         !previous || this.dayKey(previous.createdAt) !== this.dayKey(message.createdAt);
+      const intent = this.reactionIntents().get(message.id);
+
       return {
-        message,
+        message:
+          intent === undefined
+            ? message
+            : {
+                ...message,
+                reactionState: optimisticReaction(message.reactionState, intent),
+              },
         dateLabel: newDay ? this.dayLabel(message.createdAt) : null,
         grouped: !newDay && previous.senderId === message.senderId,
       };
@@ -222,6 +287,14 @@ class Chats {
   );
 
   constructor() {
+    effect(() => {
+      const chatId = this.selectedId();
+      const active = this.active();
+      const chat = active?.id === chatId ? active : this.chats().find(({ id }) => id === chatId);
+      const name = this.chatError() ? undefined : chat?.person.displayName;
+      this.title.setTitle(name || 'Chats');
+    });
+
     this.destroy.onDestroy(() => {
       this.destroyed = true;
       this.chatGeneration++;
@@ -266,6 +339,14 @@ class Chats {
     this.route.paramMap.pipe(takeUntilDestroyed(this.destroy)).subscribe((params) => {
       void this.selectChat(params.get('chatId'));
     });
+    this.users
+      .listAliases()
+      .pipe(takeUntilDestroyed(this.destroy))
+      .subscribe({
+        next: (list) => this.aliases.set(new Map(list.map((alias) => [alias.targetUserId, alias]))),
+        error: () => this.actionError.set('Не вдалося завантажити псевдоніми.'),
+      });
+    this.destroy.onDestroy(() => clearTimeout(this.replyHighlightTimer));
     void this.loadChats();
     const stop = this.service.watch((event) => {
       if (event.type === WebSocketEventType.Offline) {
@@ -276,6 +357,15 @@ class Chats {
         this.liveConnected = true;
         this.connection.set('ready');
         this.queueLiveSync();
+      } else if (event.type === WebSocketEventType.Reaction) {
+        if (event.chatId === this.selectedId() && event.reaction) {
+          const { messageId, ...state } = event.reaction;
+          if (this.messages().some(({ id }) => id === messageId)) {
+            this.applyReaction(messageId, state);
+          } else if (this.chatLoading() || this.historyLoading() || this.liveBusy) {
+            this.queueLiveSync();
+          }
+        }
       } else if (event.type === WebSocketEventType.Changed) {
         if (event.chatId === this.selectedId() && this.peerProfileOpen()) {
           this.peerMediaRevision.update((value) => value + 1);
@@ -404,6 +494,10 @@ class Chats {
     void this.router.navigate(['/chats']);
   }
   async selectChat(chatId: string | null) {
+    this.nicknameEditorOpen.set(false);
+    this.replyTarget.set(null);
+    this.highlightedReplyId.set(null);
+    this.replyNavigation++;
     this.peerProfileOpen.set(false);
     const generation = ++this.chatGeneration;
     this.navigationGeneration++;
@@ -595,7 +689,99 @@ class Chats {
       this.drafts.set(viewer.id, chatId, text);
     }
   }
+  updateAlias(targetUserId: string, alias: UserNickname | null): void {
+    this.aliases.update((current) => {
+      const updated = new Map(current);
+      if (alias) {
+        updated.set(targetUserId, { nickname: alias.nickname, color: alias.color });
+      } else {
+        updated.delete(targetUserId);
+      }
+      return updated;
+    });
+  }
+
+  authorFor(message: MessageView): PersonView | undefined {
+    return (
+      message.sender ??
+      (message.senderId === this.viewer()?.id
+        ? (this.viewer() ?? undefined)
+        : this.active()?.person)
+    );
+  }
+
+  beginReply(message: MessageView): void {
+    this.editingId.set(null);
+    this.replyTarget.set(message);
+    const chatId = this.selectedId();
+    if (chatId) {
+      this.afterRender(chatId, () => this.composerInput?.nativeElement.focus());
+    }
+  }
+
+  replyText(message: MessageView): string {
+    const file = message.attachment;
+    if (!file) {
+      return [...message.text.trim()].slice(0, 160).join('');
+    }
+    if (file.voice) {
+      return 'Голосове повідомлення';
+    }
+    if (file.mediaType.startsWith('image/')) {
+      return 'Фото';
+    }
+    if (file.mediaType.startsWith('video/')) {
+      return 'Відео';
+    }
+    return file.name;
+  }
+
+  async jumpToReply(id: string): Promise<void> {
+    const chatId = this.selectedId();
+    if (!chatId) {
+      return;
+    }
+
+    const navigation = ++this.replyNavigation;
+    while (navigation === this.replyNavigation && !this.messages().some((item) => item.id === id)) {
+      const cursor = this.nextBefore();
+      if (!cursor) {
+        break;
+      }
+      await this.loadOlder();
+      if (this.nextBefore() === cursor) {
+        break;
+      }
+    }
+
+    if (navigation !== this.replyNavigation) {
+      return;
+    }
+    if (!this.messages().some((item) => item.id === id)) {
+      this.actionError.set('Оригінал повідомлення недоступний.');
+      return;
+    }
+
+    this.afterRender(chatId, () => {
+      if (navigation !== this.replyNavigation) {
+        return;
+      }
+      const row = this.viewport?.nativeElement.querySelector<HTMLElement>(
+        `[data-message-id="${CSS.escape(id)}"]`,
+      );
+      row?.scrollIntoView?.({ block: 'center' });
+      clearTimeout(this.replyHighlightTimer);
+      this.highlightedReplyId.set(id);
+      this.replyHighlightTimer = setTimeout(() => this.highlightedReplyId.set(null), 1500);
+    });
+  }
+
   composerKey(event: KeyboardEvent) {
+    if (event.key === 'Escape' && !event.isComposing && this.replyTarget()) {
+      event.preventDefault();
+      this.replyTarget.set(null);
+      return;
+    }
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
       event.preventDefault();
       void this.send();
@@ -610,19 +796,25 @@ class Chats {
     }
 
     const text = this.draft();
+    const reply = this.replyTarget();
     this.service.typing(chatId, false);
     const key = `${viewer.id}:${chatId}`;
     this.drafts.begin(chatId);
     this.drafts.errors.update((errors) => new Map([...errors].filter(([id]) => id !== key)));
 
     try {
-      const message = await this.service.send(chatId, text);
+      const message = await (reply
+        ? this.service.send(chatId, text, reply.id)
+        : this.service.send(chatId, text));
 
       if (this.drafts.get(viewer.id, chatId) === text) {
         this.drafts.set(viewer.id, chatId, '');
       }
 
       if (!this.destroyed && this.selectedId() === chatId) {
+        if (this.replyTarget() === reply) {
+          this.replyTarget.set(null);
+        }
         this.messages.update((current) => mergeMessages(current, [messageView(message)]));
         this.draft.set(this.drafts.get(viewer.id, chatId));
         this.afterRender(chatId, () => this.resizeComposer());
@@ -732,7 +924,11 @@ class Chats {
         const atBottom = !this.showScrollDown();
         const anchor = this.captureAnchor();
         const savedDuringSync = this.messages().filter((message) => !existingIds.has(message.id));
-        this.messages.set(mergeMessages(history.messages.map(messageView), savedDuringSync));
+        const known = new Map(this.messages().map((message) => [message.id, message]));
+        const incoming = history.messages.map((message) =>
+          withLatestReaction(messageView(message), known.get(message.id)),
+        );
+        this.messages.set(mergeMessages(incoming, savedDuringSync));
         this.nextBefore.set(history.nextBefore);
         this.latestFetchedMessageId = history.messages.at(-1)?.id ?? null;
         this.afterRender(chatId, () => {
@@ -809,6 +1005,9 @@ class Chats {
   }
 
   voiceSent(chatId: string, message: ChatMessage): void {
+    if (this.selectedId() === chatId && message.reply?.id === this.replyTarget()?.id) {
+      this.replyTarget.set(null);
+    }
     if (this.selectedId() === chatId) {
       this.messages.update((current) => mergeMessages(current, [messageView(message)]));
       this.afterRender(chatId, () => this.scrollToBottom());
@@ -831,12 +1030,17 @@ class Chats {
     this.actionBusy.set(true);
     this.actionError.set('');
     try {
+      const reply = this.replyTarget();
       const bytes = new Uint8Array(await file.arrayBuffer());
       await this.service.upload(chatId, {
         name: file.name,
         mediaType: file.type || 'application/octet-stream',
         bytes,
+        ...(reply ? { replyToId: reply.id } : {}),
       });
+      if (this.selectedId() === chatId && this.replyTarget() === reply) {
+        this.replyTarget.set(null);
+      }
       this.queueLiveSync();
     } catch {
       this.actionError.set('Не вдалося надіслати файл. Спробуйте ще раз.');
@@ -877,13 +1081,91 @@ class Chats {
     try {
       await this.service.remove(chatId, message.id);
       if (this.selectedId() === chatId) {
-        this.messages.update((messages) => messages.filter((item) => item.id !== message.id));
+        this.messages.update((messages) =>
+          messages
+            .filter((item) => item.id !== message.id)
+            .map((item) =>
+              item.reply?.id === message.id
+                ? { ...item, reply: { id: message.id, author: null, preview: '' } }
+                : item,
+            ),
+        );
+        if (this.replyTarget()?.id === message.id) {
+          this.replyTarget.set(null);
+        }
       }
       this.queueLiveSync();
     } catch {
       this.actionError.set('Не вдалося видалити повідомлення. Спробуйте ще раз.');
     } finally {
       this.actionBusy.set(false);
+    }
+  }
+
+  private applyReaction(messageId: string, state: ReactionState): void {
+    this.messages.update((messages) =>
+      messages.map((message) =>
+        message.id === messageId &&
+        state.reactionVersion > (message.reactionState?.reactionVersion ?? -1)
+          ? { ...message, reactionState: state }
+          : message,
+      ),
+    );
+  }
+
+  async react(message: MessageView, picked: ReactionType): Promise<void> {
+    const chatId = this.selectedId();
+    const current = this.messages().find(({ id }) => id === message.id);
+
+    if (!chatId || !current) {
+      return;
+    }
+
+    const previous = this.reactionIntents().has(message.id)
+      ? this.reactionIntents().get(message.id)
+      : current.reactionState?.myReaction;
+    const requested = previous === picked ? null : picked;
+    this.reactionIntents.update((intents) => new Map(intents).set(message.id, requested));
+
+    if (this.reactionRequests.has(message.id)) {
+      return;
+    }
+
+    this.reactionRequests.add(message.id);
+    try {
+      while (!this.destroyed) {
+        const intent = this.reactionIntents().get(message.id);
+
+        if (intent === undefined) {
+          break;
+        }
+
+        let failed = false;
+
+        try {
+          const state = await this.service.setReaction(chatId, message.id, intent);
+          if (this.selectedId() === chatId) {
+            this.applyReaction(message.id, state);
+          }
+        } catch {
+          failed = true;
+        }
+
+        if (this.reactionIntents().get(message.id) === intent) {
+          this.reactionIntents.update((intents) => {
+            const remaining = new Map(intents);
+            remaining.delete(message.id);
+            return remaining;
+          });
+
+          if (failed && !this.destroyed && this.selectedId() === chatId) {
+            this.actionError.set('Не вдалося змінити реакцію. Спробуйте ще раз.');
+            this.queueLiveSync();
+          }
+        }
+      }
+    } finally {
+      this.reactionRequests.delete(message.id);
     }
   }
 
@@ -894,6 +1176,7 @@ class Chats {
       const person = await this.service.viewer();
       this.viewer.set(personView(person));
       this.profileName.set(person.displayName);
+      this.profileReaction.set(person.defaultReaction ?? 'HEART');
       this.profileAvatar.set(person.avatarUrl ?? null);
       this.avatarModified.set(false);
       this.profileOpen.set(true);
@@ -940,6 +1223,9 @@ class Chats {
       await firstValueFrom(
         this.users.updateProfile({
           displayName: this.profileName(),
+          ...(this.profileReaction() !== (this.viewer()?.defaultReaction ?? 'HEART')
+            ? { defaultReaction: this.profileReaction() }
+            : {}),
           ...(this.avatarModified() ? { avatarUrl: this.profileAvatar() } : {}),
         }),
       );

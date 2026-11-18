@@ -150,6 +150,9 @@ class AuthService {
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
       ...(url !== undefined ? { avatarUrl: url } : {}),
+      ...(user.defaultReaction
+        ? { defaultReaction: user.defaultReaction }
+        : {}),
     };
   }
 

@@ -3,6 +3,8 @@ import { UUID_EXAMPLE } from '../../../../../core/examples/uuid.examples.js';
 const createdAt = '2026-10-30T12:30:00.000Z';
 
 const CHATS_EXAMPLES = {
+  reactionCount: 2,
+  reactionVersion: 3,
   mediaCounts: { photos: 12, videos: 4, files: 7, audio: 2, voice: 3, gifs: 0 },
   username: 'alice',
   displayName: 'Alice',

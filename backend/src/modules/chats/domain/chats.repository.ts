@@ -8,6 +8,11 @@ import type {
 
 import type { MediaCategory, MediaCounts } from './shared-media.js';
 
+import type {
+  SetReactionInput,
+  ReactionSnapshot,
+} from './message-reactions.js';
+
 type CreatePrivateChatInput = {
   currentUserId: string;
   recipientId: string;
@@ -32,6 +37,7 @@ type MessageFile = {
 };
 
 type SendMessageInput = {
+  replyToId?: string;
   chatId: string;
   senderId: string;
   text: string;
@@ -46,6 +52,7 @@ type SendVoiceMessageInput = SendMessageInput & {
 type SaveMessageResult = { message: ChatMessage; created: boolean };
 
 type FindMessagesInput = {
+  messageId?: string;
   chatId: string;
   userId: string;
   cursor: MessageCursor | null;
@@ -82,6 +89,7 @@ type AttachmentData = {
   legacyBytes: Uint8Array | null;
 };
 interface IMessagesRepository {
+  setReaction(input: SetReactionInput): Promise<ReactionSnapshot>;
   findAttachment(
     chatId: string,
     messageId: string,

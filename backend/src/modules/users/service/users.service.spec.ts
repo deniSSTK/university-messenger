@@ -4,6 +4,9 @@ import type { UsersRepository } from '../domain/users.repository.js';
 
 describe('UsersService', () => {
   const repository: jest.Mocked<UsersRepository> = {
+    listAliases: jest.fn(),
+    saveAlias: jest.fn(),
+    deleteAlias: jest.fn(),
     findByUsernamePrefix: jest.fn(),
     updateProfile: jest.fn(),
   };

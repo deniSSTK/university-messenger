@@ -2,6 +2,9 @@ import { ApiProperty } from '@nestjs/swagger';
 import { UUID } from '../../../../../core/decorators/uuid.decorator.js';
 import { AUTH_EXAMPLES, AUTH_USER_EXAMPLE } from './auth.examples.js';
 
+import { REACTION_TYPES } from '@university-messenger/events';
+import type { ReactionType } from '@university-messenger/events';
+
 class PublicUserDto {
   @UUID()
   id!: string;
@@ -22,6 +25,9 @@ class PublicUserDto {
     description: 'Temporary signed S3 GET URL for the avatar.',
   })
   avatarUrl?: string | null;
+
+  @ApiProperty({ enum: REACTION_TYPES, example: REACTION_TYPES[0] })
+  defaultReaction?: ReactionType;
 
   @ApiProperty({
     example: AUTH_EXAMPLES.createdAt,

@@ -5,6 +5,7 @@ import type {
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../prisma/prisma.service.js';
+import type { UserAlias } from '../domain/user-alias.js';
 import type {
   UsersRepository,
   FindUsersInput,
@@ -15,9 +16,48 @@ function escapeLikePrefix(value: string): string {
   return value.replace(/[\\%_]/g, '\\$&');
 }
 
+const aliasSelect = {
+  targetUserId: true,
+  nickname: true,
+  color: true,
+} as const;
+
 @Injectable()
 class PrismaUsersRepository implements UsersRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  listAliases(ownerId: string): Promise<UserAlias[]> {
+    return this.prisma.userAlias.findMany({
+      where: { ownerId, target: { deletedAt: null } },
+      select: aliasSelect,
+    });
+  }
+
+  saveAlias(ownerId: string, alias: UserAlias): Promise<UserAlias | null> {
+    return this.prisma.$transaction(async (transaction) => {
+      const [target] = await transaction.$queryRaw<{ id: string }[]>`
+        SELECT "id" FROM "User" WHERE "id" = ${alias.targetUserId}::uuid
+          AND "deletedAt" IS NULL FOR SHARE
+      `;
+
+      if (!target) {
+        return null;
+      }
+
+      return transaction.userAlias.upsert({
+        where: { ownerId_targetUserId: { ownerId, targetUserId: target.id } },
+        create: { ...alias, ownerId },
+        update: { nickname: alias.nickname, color: alias.color },
+        select: aliasSelect,
+      });
+    });
+  }
+
+  async deleteAlias(ownerId: string, targetUserId: string): Promise<void> {
+    await this.prisma.userAlias.deleteMany({
+      where: { ownerId, targetUserId },
+    });
+  }
 
   async updateProfile(input: ProfileUpdate): Promise<ProfileUpdateResult> {
     return this.prisma.$transaction(async (transaction) => {
@@ -32,6 +72,7 @@ class PrismaUsersRepository implements UsersRepository {
           displayName: input.displayName,
           avatarUrl: input.avatarUrl,
           avatarKey: input.avatarKey,
+          defaultReaction: input.defaultReaction,
         },
         select: {
           id: true,
@@ -39,6 +80,7 @@ class PrismaUsersRepository implements UsersRepository {
           displayName: true,
           avatarUrl: true,
           avatarKey: true,
+          defaultReaction: true,
         },
       });
 
@@ -50,6 +92,7 @@ class PrismaUsersRepository implements UsersRepository {
           displayName: user.displayName,
           avatarUrl: user.avatarUrl,
           avatarKey: user.avatarKey,
+          defaultReaction: user.defaultReaction,
         },
       };
     });

@@ -24,6 +24,7 @@ type ListChatsResult = {
 };
 
 type SendChatMessageInput = {
+  replyToId?: string;
   chatId: string;
   senderId: string;
   text: string;
@@ -51,6 +52,7 @@ type ChatDetailsResult = {
 };
 
 type SendFileInput = {
+  replyToId?: string;
   chatId: string;
   senderId: string;
   name: string;
