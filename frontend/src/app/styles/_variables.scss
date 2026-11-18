@@ -1,19 +1,19 @@
-$bg-white: #ffffff;
-$text-secondary: #707579;
-$border-color: #dfe1e5;
-$primary-color: #3390ec;
-$primary-hover: #2b7cb2;
-$primary-disabled: #a8cbf0;
-$error-color: #e53935;
-$bg-light: #f4f4f5;
-$border-light: #e4e4e5;
-$text-muted: #8c9094;
-$text-active: #e3f2fd;
-$avatar-blue: #40a7e3;
-$avatar-purple: #895dd5;
-$chat-bg: #bcd8ec;
+$bg-white: var(--bg-surface);
+$text-secondary: var(--text-secondary);
+$border-color: var(--border-color);
+$primary-color: var(--accent-color);
+$primary-hover: var(--accent-hover);
+$primary-disabled: var(--accent-outline);
+$error-color: var(--danger-color);
+$bg-light: var(--bg-page);
+$border-light: var(--border-color);
+$text-muted: var(--text-muted);
+$text-active: var(--text-active);
+$avatar-blue: var(--avatar-gradient-start);
+$avatar-purple: var(--avatar-gradient-end);
+$chat-bg: var(--bg-message-own);
 
-$box-shadow-main: 0 4px 12px rgba(0, 0, 0, 0.05);
+$box-shadow-main: var(--shadow-card);
 
 $spacing-xs: 6px;
 $spacing-sm: 10px;

@@ -9,14 +9,14 @@ label {
   gap: 8px;
   padding: 9px 12px;
   border-radius: 10px;
-  color: #315779;
-  background: #edf3f8;
+  color: var(--text-accent-strong);
+  background: var(--bg-accent-soft);
   font: inherit;
   font-size: 13px;
   cursor: pointer;
 }
 small {
-  color: #6b7c8b;
+  color: var(--text-secondary);
   font-size: 11px;
 }
 input {
@@ -33,10 +33,10 @@ input {
   padding: 10px;
   border-radius: 50%;
   background: transparent;
-  color: var(--chat-muted, #7f91a4);
+  color: var(--chat-muted, var(--text-muted));
 }
 :host(.icon-only) label:hover {
-  background: #ffffff0a;
+  background: var(--bg-surface-hover);
 }
 :host(.icon-only) span,
 :host(.icon-only) small {
@@ -47,7 +47,7 @@ input {
   clip-path: inset(50%);
 }
 label:focus-within {
-  outline: 3px solid #9ac2ed;
+  outline: 3px solid var(--accent-outline);
   outline-offset: 2px;
 }
 label:has(input:disabled) {

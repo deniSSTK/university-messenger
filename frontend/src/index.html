@@ -6,6 +6,23 @@
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/png" href="messenger-tab.png" />
+    <script>
+      (function () {
+        const key = 'neon-orbs-theme';
+        const saved = localStorage.getItem(key);
+        const prefersDark =
+          typeof window.matchMedia === 'function' &&
+          window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const theme =
+          saved === 'light' || saved === 'dark'
+            ? saved
+            : prefersDark
+              ? 'dark'
+              : 'light';
+
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
   </head>
   <body>
     <app-root></app-root>

@@ -15,6 +15,9 @@ import { IconMore } from '../../../../shared/ui/icons/more';
 import { IconChevronDown } from '../../../../shared/ui/icons/chevron-down';
 import { IconClose } from '../../../../shared/ui/icons/close';
 import { ChatNicknameEditor } from './chat-nickname-editor';
+import { IconSun } from '../../../../shared/ui/icons/sun';
+import { IconMoon } from '../../../../shared/ui/icons/moon';
+import { ThemeService } from '../../../../core/services/theme.service';
 import { ChatPeerProfile } from './chat-peer-profile';
 import { downloadAttachment } from './download-attachment';
 import { ChatProfileEditor } from './chat-profile-editor';
@@ -156,6 +159,8 @@ function mergeMessages(current: MessageView[], incoming: MessageView[]) {
     IconSearch,
     IconBack,
     IconSend,
+    IconSun,
+    IconMoon,
     ChatBubble,
     VoiceComposer,
     ChatAccountMenu,
@@ -174,6 +179,7 @@ class Chats {
   private users = inject(Users);
   private readonly title = inject(Title);
   private destroy = inject(DestroyRef);
+  readonly theme = inject(ThemeService);
   readonly drafts = inject(ChatDrafts);
   private searchRequests = new Subject<{ search: string; page: number; wait: boolean }>();
   private chatGeneration = 0;

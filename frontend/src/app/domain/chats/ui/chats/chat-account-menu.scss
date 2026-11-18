@@ -6,11 +6,11 @@
   width: 290px;
   max-width: calc(100vw - 24px);
   padding: 6px;
-  border: 1px solid #ffffff08;
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  background: var(--chat-raised, #202e3b);
-  color: #f5f5f5;
-  box-shadow: 0 6px 24px #0005;
+  background: var(--chat-raised, var(--bg-surface-raised));
+  color: var(--text-primary);
+  box-shadow: var(--shadow-popover);
 }
 .account-summary {
   display: flex;
@@ -18,7 +18,7 @@
   gap: 12px;
   padding: 12px;
   margin-bottom: 4px;
-  border-bottom: 1px solid #ffffff0a;
+  border-bottom: 1px solid var(--border-divider);
   user-select: none;
 }
 .account-summary > div {
@@ -33,16 +33,16 @@
 }
 .account-summary span {
   font-size: 13px;
-  color: #7f91a4;
+  color: var(--text-muted);
 }
 .menu-note {
   padding: 8px 12px;
   font-size: 12px;
   line-height: 1.5;
-  color: #a4b8ca;
+  color: var(--text-secondary);
 }
 .error {
-  color: #f37583;
+  color: var(--danger-color);
 }
 .logout-btn {
   display: flex;
@@ -60,10 +60,10 @@
   cursor: pointer;
 }
 .logout-btn:last-child {
-  color: #f37583;
+  color: var(--danger-color);
 }
 .logout-btn:hover {
-  background: #ffffff0a;
+  background: var(--bg-surface-hover);
 }
 .logout-btn:disabled {
   opacity: 0.45;
