@@ -42,6 +42,10 @@ function mapMessage(message: ChatMessageHttpResponse): ChatMessageRecord {
   return {
     id: message.id,
     senderId: message.senderId,
+    ...(message.sender ? { sender: mapPerson(message.sender) } : {}),
+    ...(message.reply
+      ? { reply: { ...message.reply, author: message.reply.author && { ...message.reply.author } } }
+      : {}),
     text: message.text,
     createdAt: message.createdAt,
     ...(message.reactionState ? { reactionState: message.reactionState } : {}),
@@ -189,8 +193,8 @@ class ChatsHttpAdapter implements ChatsRepository {
     });
   }
 
-  send(chatId: string, text: string): Promise<ChatMessageRecord> {
-    const body: SendMessageHttpRequest = { text };
+  send(chatId: string, text: string, replyToId?: string): Promise<ChatMessageRecord> {
+    const body: SendMessageHttpRequest = { text, ...(replyToId ? { replyToId } : {}) };
     return this.translateErrors(async () => {
       const response = await firstValueFrom(
         this.http.post<ChatMessageHttpResponse>(`${this.chatUrl(chatId)}/messages`, body),
@@ -218,6 +222,7 @@ class ChatsHttpAdapter implements ChatsRepository {
     return this.translateErrors(async () => {
       const body: SendVoiceHttpRequest = {
         id: recording.id,
+        ...(recording.replyToId ? { replyToId: recording.replyToId } : {}),
         mediaType: recording.mediaType,
         content: encodeBase64(recording.bytes),
       };

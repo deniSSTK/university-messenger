@@ -55,6 +55,11 @@ type MessageResponse = {
   chatId: string;
   text: string;
   senderId: string;
+  reply?: {
+    id: string;
+    author: { id: string; displayName: string } | null;
+    preview: string;
+  };
   createdAt: string;
 };
 
@@ -1163,6 +1168,134 @@ describeDatabase('Chats API (PostgreSQL)', () => {
     ]);
   });
 
+  it('keeps private nicknames isolated and persists edits and colors', async () => {
+    const alice = await register('alice');
+    const bob = await register('bob');
+    const api = request(app.getHttpServer());
+    const aliases = '/users/me/aliases';
+    const url = `${aliases}/${bob.user.id}`;
+    const token = (user: AuthResponse) => `Bearer ${user.accessToken}`;
+    const save = (nickname: string, color: string) =>
+      api.put(url).set('Authorization', token(alice)).send({ nickname, color });
+
+    await api.get(aliases).expect(401);
+    await save('   ', 'BLUE').expect(400);
+    await save('Nickname', 'url(unsafe)').expect(400);
+    await save('  Private Nickname  ', 'CYAN').expect(200, {
+      targetUserId: bob.user.id,
+      nickname: 'Private Nickname',
+      color: 'CYAN',
+    });
+    await save('Edited', 'PURPLE').expect(200);
+    await api
+      .get(aliases)
+      .set('Authorization', token(alice))
+      .expect(200, [
+        { targetUserId: bob.user.id, nickname: 'Edited', color: 'PURPLE' },
+      ]);
+    await api.get(aliases).set('Authorization', token(bob)).expect(200, []);
+    await api
+      .get('/auth/me')
+      .set('Authorization', token(bob))
+      .expect(200)
+      .expect((response) =>
+        expect(responseBody<AuthResponse['user']>(response)).toMatchObject({
+          displayName: bob.user.displayName,
+        }),
+      );
+    await api.delete(url).set('Authorization', token(alice)).expect(204);
+    await api.get(aliases).set('Authorization', token(alice)).expect(200, []);
+  });
+
+  it('persists replies, filters cleared and deleted originals, and rejects cross-chat references', async () => {
+    const alice = await register('alice');
+    const bob = await register('bob');
+    const outsider = await register('outsider');
+    const api = request(app.getHttpServer());
+    const token = (user: AuthResponse) => `Bearer ${user.accessToken}`;
+    const open = async (recipient: AuthResponse) =>
+      responseBody<ChatResponse>(
+        await api
+          .post('/chats')
+          .set('Authorization', token(alice))
+          .send({ recipientId: recipient.user.id })
+          .expect(201),
+      );
+    const chat = await open(bob);
+    const other = await open(outsider);
+    const base = `/chats/${chat.id}/messages`;
+    const send = (
+      url: string,
+      user: AuthResponse,
+      text: string,
+      replyToId?: string,
+    ) =>
+      api
+        .post(url)
+        .set('Authorization', token(user))
+        .send({ text, ...(replyToId ? { replyToId } : {}) });
+    const original = responseBody<MessageResponse>(
+      await send(base, alice, 'Original').expect(201),
+    );
+    const preview = {
+      id: original.id,
+      author: { id: alice.user.id, displayName: alice.user.displayName },
+      preview: 'Original',
+    };
+    await send(
+      `/chats/${other.id}/messages`,
+      alice,
+      'Cross-chat',
+      original.id,
+    ).expect(404);
+    await send(base, outsider, 'Outside', original.id).expect(404);
+    await send(base, bob, 'Invalid', 'bad-id').expect(400);
+    await send(base, bob, 'Reply', original.id)
+      .expect(201)
+      .expect((response) =>
+        expect(responseBody<MessageResponse>(response).reply).toEqual(preview),
+      );
+    await api
+      .get(base)
+      .set('Authorization', token(alice))
+      .expect(200)
+      .expect((response) =>
+        expect(
+          responseBody<MessageHistoryResponse>(response).items[0],
+        ).toMatchObject({ reply: preview }),
+      );
+    const quote = { id: original.id, author: null, preview: '' };
+    await api
+      .delete(`/chats/${chat.id}/visibility`)
+      .set('Authorization', token(bob))
+      .expect(204);
+    await send(base, bob, 'Cleared', original.id).expect(404);
+    await send(base, alice, 'Still visible to me', original.id).expect(201);
+    await api
+      .get(base)
+      .set('Authorization', token(bob))
+      .expect(200)
+      .expect((response) =>
+        expect(
+          responseBody<MessageHistoryResponse>(response).items[0],
+        ).toMatchObject({ reply: quote }),
+      );
+    await api
+      .delete(`${base}/${original.id}`)
+      .set('Authorization', token(alice))
+      .expect(204);
+    await send(base, alice, 'Deleted', original.id).expect(404);
+    await api
+      .get(base)
+      .set('Authorization', token(alice))
+      .expect(200)
+      .expect((response) =>
+        expect(
+          responseBody<MessageHistoryResponse>(response).items[0],
+        ).toMatchObject({ reply: quote }),
+      );
+  });
+
   it('persists the signed-in user’s default and enforces unique authorized message reactions', async () => {
     const alice = await register('alice');
     const bob = await register('bob');
@@ -1338,8 +1471,12 @@ describeDatabase('Chats API (PostgreSQL)', () => {
         .expect(201);
       expect(await changed).toMatchObject({ chatId: chat.id });
       expect(otherEvents).toEqual([]);
+      const original = await prisma.message.findFirstOrThrow({
+        where: { chatId: chat.id, text: 'Live' },
+      });
       const voicePayload = {
         id: randomUUID(),
+        replyToId: original.id,
         mediaType: 'audio/webm',
         content: sampleVoice(),
       };
@@ -1351,7 +1488,14 @@ describeDatabase('Chats API (PostgreSQL)', () => {
           .send(voicePayload)
           .expect(201),
       ]);
-      expect(voiceChanged).toMatchObject({ chatId: chat.id });
+      expect(voiceChanged).toMatchObject({
+        chatId: chat.id,
+        reply: {
+          id: original.id,
+          author: { id: alice.user.id },
+          preview: 'Live',
+        },
+      });
       expect(
         await prisma.message.findUnique({
           where: { id: responseBody<MessageResponse>(voice).id },

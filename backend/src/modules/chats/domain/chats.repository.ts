@@ -37,6 +37,7 @@ type MessageFile = {
 };
 
 type SendMessageInput = {
+  replyToId?: string;
   chatId: string;
   senderId: string;
   text: string;
@@ -51,6 +52,7 @@ type SendVoiceMessageInput = SendMessageInput & {
 type SaveMessageResult = { message: ChatMessage; created: boolean };
 
 type FindMessagesInput = {
+  messageId?: string;
   chatId: string;
   userId: string;
   cursor: MessageCursor | null;

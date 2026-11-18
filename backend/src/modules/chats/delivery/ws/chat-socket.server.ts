@@ -1,3 +1,4 @@
+import type { ReplyPreview } from '../../domain/chats.models.js';
 import { WebSocketEventType } from '@university-messenger/events';
 import {
   Injectable,
@@ -228,6 +229,31 @@ class ChatSocketServer implements OnApplicationBootstrap, OnModuleDestroy {
   }
 
   private async broadcast(event: ChatEvent): Promise<void> {
+    const replies = new Map<string, Promise<ReplyPreview | undefined>>();
+    const payloadFor = async (userId: string) => {
+      if (event.type !== WebSocketEventType.Changed || !event.messageId) {
+        return event;
+      }
+
+      let lookup = replies.get(userId);
+
+      if (!lookup) {
+        lookup = this.chats.liveReply(event.chatId, event.messageId, userId);
+        replies.set(userId, lookup);
+      }
+
+      const reply = await lookup;
+
+      return reply
+        ? {
+            type: event.type,
+            chatId: event.chatId,
+            messageId: event.messageId,
+            reply,
+          }
+        : { type: event.type, chatId: event.chatId };
+    };
+
     await Promise.all(
       [...this.connections].map(async ([client, connection]) => {
         try {
@@ -261,7 +287,7 @@ class ChatSocketServer implements OnApplicationBootstrap, OnModuleDestroy {
                         ({ userId }) => userId === connection.userId,
                       )?.type ?? null,
                   }
-                : event;
+                : await payloadFor(connection.userId);
             client.send(JSON.stringify(payload));
           }
         } catch {

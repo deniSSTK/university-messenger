@@ -27,6 +27,30 @@ model User {
   chatMemberships ChatMember[]
   messages        Message[]
   reactions       MessageReaction[]
+  ownedAliases    UserAlias[]       @relation("AliasOwner")
+  receivedAliases UserAlias[]       @relation("AliasTarget")
+}
+
+enum NicknameColor {
+  BLUE
+  PURPLE
+  GREEN
+  ORANGE
+  PINK
+  RED
+  CYAN
+}
+
+model UserAlias {
+  ownerId      String        @db.Uuid
+  targetUserId String        @db.Uuid
+  nickname     String        @db.VarChar(64)
+  color        NicknameColor
+  owner        User          @relation("AliasOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  target       User          @relation("AliasTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+
+  @@id([ownerId, targetUserId])
+  @@index([targetUserId])
 }
 
 model UserSession {
@@ -80,6 +104,7 @@ model Message {
   senderId        String            @db.Uuid
   attachmentId    String?           @unique @db.Uuid
   voiceRequestId  String?           @db.Uuid
+  replyToId       String?           @db.Uuid
   text            String
   createdAt       DateTime          @default(now()) @db.Timestamptz(3)
   editedAt        DateTime?         @db.Timestamptz(3)
@@ -89,10 +114,13 @@ model Message {
   chat       Chat        @relation(fields: [chatId], references: [id], onDelete: Restrict)
   sender     User        @relation(fields: [senderId], references: [id], onDelete: Restrict)
   attachment Attachment? @relation(fields: [attachmentId], references: [id], onDelete: Restrict)
+  replyTo    Message?    @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies    Message[]   @relation("MessageReplies")
 
   @@unique([chatId, senderId, voiceRequestId])
   @@index([chatId, createdAt, id])
   @@index([senderId])
+  @@index([replyToId])
 }
 
 enum AttachmentType {

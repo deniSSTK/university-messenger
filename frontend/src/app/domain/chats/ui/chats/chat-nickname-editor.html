@@ -1,0 +1,57 @@
+<app-dialog heading="Прізвисько" [locked]="nicknameBusy()" (closed)="closed.emit()">
+  <form (submit)="$event.preventDefault(); saveNickname()">
+    <label for="peer-nickname">Особисте прізвисько</label>
+    <input
+      id="peer-nickname"
+      autofocus
+      [value]="nicknameDraft()"
+      (input)="nicknameDraft.set(nicknameInput.value)"
+      #nicknameInput
+    />
+    <div class="nickname-colors" role="group" aria-label="Колір прізвиська">
+      @for (color of nicknameColors; track color) {
+        <button
+          type="button"
+          class="nickname-swatch"
+          [attr.data-nickname-color]="color"
+          [attr.aria-pressed]="nicknameColor() === color"
+          [attr.aria-label]="colorLabels[color]"
+          (click)="nicknameColor.set(color)"
+        ></button>
+      }
+    </div>
+    @if (nicknameDraft().trim()) {
+      <strong
+        class="nickname-preview nickname-badge"
+        [attr.data-nickname-color]="nicknameColor()"
+        >{{ nicknameDraft().trim() }}</strong
+      >
+    }
+    @if (nicknameError()) {
+      <p role="alert">{{ nicknameError() }}</p>
+    }
+    <div class="nickname-actions">
+      <button appButton type="submit" [busy]="nicknameBusy()">Зберегти</button>
+      <button
+        appButton
+        variant="ghost"
+        type="button"
+        [disabled]="nicknameBusy()"
+        (click)="closed.emit()"
+      >
+        Скасувати
+      </button>
+      @if (nickname()) {
+        <button
+          appButton
+          variant="ghost"
+          type="button"
+          [disabled]="nicknameBusy()"
+          (click)="saveNickname(true)"
+        >
+          Прибрати
+        </button>
+      }
+    </div>
+  </form>
+</app-dialog>

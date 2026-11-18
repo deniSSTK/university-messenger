@@ -8,6 +8,8 @@ interface ChatPerson {
   avatarUrl?: string | null;
 }
 interface ChatMessage {
+  reply?: { id: string; author: { id: string; displayName: string } | null; preview: string };
+  sender?: ChatPerson;
   reactionState?: ReactionState;
   id: string;
   senderId: string;
@@ -49,9 +51,9 @@ type ChatActivity = {
   typing?: boolean;
   reaction?: ReactionState & { messageId: string };
 };
-type ChatFile = { name: string; mediaType: string; bytes: Uint8Array };
+type ChatFile = { name: string; mediaType: string; bytes: Uint8Array; replyToId?: string };
 
-type VoiceRecordingInput = { id: string; mediaType: string; bytes: Uint8Array };
+type VoiceRecordingInput = { id: string; mediaType: string; bytes: Uint8Array; replyToId?: string };
 
 type SharedMediaCategory = 'photos' | 'videos' | 'files' | 'audio' | 'voice' | 'gifs';
 type SharedMediaCounts = Record<SharedMediaCategory, number>;

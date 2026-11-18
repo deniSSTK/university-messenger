@@ -1,4 +1,4 @@
-import type { ReactionType } from '@university-messenger/events';
+import type { NicknameColor, ReactionType } from '@university-messenger/events';
 import { Injectable, inject } from '@angular/core';
 import { catchError, map, throwError } from 'rxjs';
 import { HttpClient } from '../../../../core/http/http-client.service';
@@ -21,9 +21,38 @@ interface UpdateProfileHttpRequest {
   defaultReaction?: ReactionType;
 }
 
+type AliasHttpRequest = { nickname: string; color: NicknameColor };
+type AliasHttpResponse = AliasHttpRequest & { targetUserId: string };
+
 @Injectable({ providedIn: 'root' })
 class UsersHttpAdapter implements UsersRepository {
   private http = inject(HttpClient);
+  private readonly aliasUrl = `${environment.apiUrl}/users/me/aliases`;
+
+  listAliases() {
+    return this.http.get<AliasHttpResponse[]>(this.aliasUrl).pipe(
+      map((aliases) =>
+        aliases.map(({ targetUserId, nickname, color }) => ({ targetUserId, nickname, color })),
+      ),
+      catchError(() => throwError(() => new UsersRepositoryError())),
+    );
+  }
+
+  saveAlias(targetUserId: string, input: AliasHttpRequest) {
+    const request = { nickname: input.nickname, color: input.color };
+    return this.http
+      .put<AliasHttpResponse>(`${this.aliasUrl}/${encodeURIComponent(targetUserId)}`, request)
+      .pipe(
+        map(({ targetUserId, nickname, color }) => ({ targetUserId, nickname, color })),
+        catchError(() => throwError(() => new UsersRepositoryError())),
+      );
+  }
+
+  deleteAlias(targetUserId: string) {
+    return this.http
+      .delete<void>(`${this.aliasUrl}/${encodeURIComponent(targetUserId)}`)
+      .pipe(catchError(() => throwError(() => new UsersRepositoryError())));
+  }
 
   updateProfile(input: UpdateProfileRepositoryInput) {
     const request: UpdateProfileHttpRequest = {

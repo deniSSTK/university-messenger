@@ -177,6 +177,7 @@ class ActivityHttpAdapter implements ActivityRepository {
       await firstValueFrom(
         this.http.post(`${environment.apiUrl}/chats/${encodeURIComponent(chatId)}/attachments`, {
           name: file.name,
+          ...(file.replyToId ? { replyToId: file.replyToId } : {}),
           mediaType: file.mediaType,
           content: encodeBase64(file.bytes),
         }),

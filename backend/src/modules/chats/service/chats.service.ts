@@ -176,6 +176,7 @@ class ChatsService {
     this.events.publish({
       type: WebSocketEventType.Changed,
       chatId: input.chatId,
+      ...(message.reply ? { messageId: message.id } : {}),
     });
 
     return this.presentMessage(message);
@@ -213,6 +214,7 @@ class ChatsService {
           chatId: input.chatId,
           senderId: input.senderId,
           text: name,
+          ...(input.replyToId ? { replyToId: input.replyToId } : {}),
           file: {
             name,
             mediaType: input.mediaType,
@@ -250,6 +252,7 @@ class ChatsService {
           chatId: input.chatId,
           senderId: input.senderId,
           text: 'Голосове повідомлення',
+          ...(input.replyToId ? { replyToId: input.replyToId } : {}),
           file: {
             key,
             name: `voice.${audio.extension}`,
@@ -285,7 +288,11 @@ class ChatsService {
     }
 
     if (result.created) {
-      this.events.publish({ type: WebSocketEventType.Changed, chatId });
+      this.events.publish({
+        type: WebSocketEventType.Changed,
+        chatId,
+        ...(result.message.reply ? { messageId: result.message.id } : {}),
+      });
     } else {
       await storage.remove(key).catch(() => undefined);
     }
@@ -466,6 +473,26 @@ class ChatsService {
   }
   private async presentMessage(message: ChatMessage): Promise<ChatMessage> {
     return { ...message, sender: await this.presentPerson(message.sender) };
+  }
+
+  async liveReply(chatId: string, messageId: string, userId: string) {
+    try {
+      const { items } = await this.messagesRepository.findMessages({
+        chatId,
+        messageId,
+        userId,
+        take: 1,
+        cursor: null,
+      });
+
+      return items[0]?.reply;
+    } catch (error: unknown) {
+      if (error instanceof ChatNotFoundError) {
+        return undefined;
+      }
+
+      throw error;
+    }
   }
 
   async isActiveMember(chatId: string, userId: string): Promise<boolean> {

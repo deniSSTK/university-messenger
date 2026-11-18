@@ -1,5 +1,6 @@
 import type { ProfileUpdateResult, ProfileUpdate } from './profile.models.js';
 import type { UserSearchItem } from './users.models.js';
+import type { UserAlias } from './user-alias.js';
 
 type FindUsersInput = {
   usernamePrefix: string;
@@ -14,6 +15,9 @@ type FindUsersResult = {
 };
 
 interface UsersRepository {
+  listAliases(ownerId: string): Promise<UserAlias[]>;
+  saveAlias(ownerId: string, alias: UserAlias): Promise<UserAlias | null>;
+  deleteAlias(ownerId: string, targetUserId: string): Promise<void>;
   updateProfile(input: ProfileUpdate): Promise<ProfileUpdateResult>;
   findByUsernamePrefix(input: FindUsersInput): Promise<FindUsersResult>;
 }

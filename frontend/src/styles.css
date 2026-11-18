@@ -53,3 +53,78 @@ a:focus-visible {
 html:has(dialog[open]) {
   overflow: hidden;
 }
+
+[data-nickname-color] {
+  color: var(--nickname-color, inherit);
+}
+
+[data-nickname-color='BLUE'] {
+  --nickname-color: light-dark(#245bab, #9aceff);
+}
+[data-nickname-color='PURPLE'] {
+  --nickname-color: light-dark(#6736a2, #dbc2ff);
+}
+[data-nickname-color='GREEN'] {
+  --nickname-color: light-dark(#27642e, #ade7a0);
+}
+[data-nickname-color='ORANGE'] {
+  --nickname-color: light-dark(#884600, #ffd0a0);
+}
+[data-nickname-color='PINK'] {
+  --nickname-color: light-dark(#9b2964, #ffc0de);
+}
+[data-nickname-color='RED'] {
+  --nickname-color: light-dark(#a72c36, #ffbdbd);
+}
+[data-nickname-color='CYAN'] {
+  --nickname-color: light-dark(#006671, #99ebf0);
+}
+
+.nickname-badge {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--nickname-color) 15%, transparent);
+  color: var(--nickname-color);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.reply-quote {
+  display: grid;
+  min-width: 0;
+  width: 100%;
+  gap: 2px;
+  padding: 5px 9px;
+  border: 0;
+  border-inline-start: 3px solid var(--nickname-color, var(--chat-accent));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--nickname-color, var(--chat-accent)) 14%, transparent);
+  text-align: start;
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.reply-quote strong,
+.reply-quote span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reply-quote strong {
+  color: var(--nickname-color, var(--chat-accent));
+}
+
+.reply-quote span {
+  color: var(--chat-text);
+}
+
+button.reply-quote:not(:disabled) {
+  cursor: pointer;
+}
+
+button.reply-quote:not(:disabled):hover {
+  background: color-mix(in srgb, var(--nickname-color, var(--chat-accent)) 22%, transparent);
+}

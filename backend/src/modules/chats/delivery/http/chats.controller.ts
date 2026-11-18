@@ -267,6 +267,7 @@ class ChatsController {
       chatId: params.chatId,
       senderId: request.auth.user.id,
       text: dto.text,
+      ...(dto.replyToId ? { replyToId: dto.replyToId } : {}),
     });
   }
 
@@ -287,6 +288,7 @@ class ChatsController {
       chatId: params.chatId,
       senderId: request.auth.user.id,
       name: dto.name,
+      ...(dto.replyToId ? { replyToId: dto.replyToId } : {}),
       mediaType: dto.mediaType,
       bytes: Buffer.from(dto.content, 'base64'),
     });
@@ -307,6 +309,7 @@ class ChatsController {
   ): Promise<SendMessageResponseDto> {
     return this.chats.sendVoice({
       id: dto.id.toLowerCase(),
+      ...(dto.replyToId ? { replyToId: dto.replyToId } : {}),
       chatId: params.chatId,
       senderId: request.auth.user.id,
       mediaType: dto.mediaType,

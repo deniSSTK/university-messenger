@@ -21,6 +21,25 @@ class ChatParticipantDto {
   avatarUrl?: string | null;
 }
 
+class ReplyAuthorDto {
+  @UUID()
+  id!: string;
+
+  @ApiProperty({ example: CHATS_EXAMPLES.displayName })
+  displayName!: string;
+}
+
+class ReplyPreviewDto {
+  @UUID()
+  id!: string;
+
+  @ApiProperty({ type: ReplyAuthorDto, nullable: true })
+  author!: ReplyAuthorDto | null;
+
+  @ApiProperty({ example: CHATS_EXAMPLES.text, maxLength: 160 })
+  preview!: string;
+}
+
 class ChatMessageDto {
   @UUID()
   id!: string;
@@ -65,6 +84,9 @@ class ChatMessageDto {
 
   @ApiPropertyOptional({ type: ReactionStateDto })
   reactionState?: ReactionStateDto;
+
+  @ApiPropertyOptional({ type: ReplyPreviewDto })
+  reply?: ReplyPreviewDto;
 }
 
 class ChatListItemDto {

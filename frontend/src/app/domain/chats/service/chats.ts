@@ -35,6 +35,10 @@ function mapMessage(message: ChatMessageRecord): ChatMessage {
   return {
     id: message.id,
     senderId: message.senderId,
+    ...(message.sender ? { sender: { ...message.sender } } : {}),
+    ...(message.reply
+      ? { reply: { ...message.reply, author: message.reply.author && { ...message.reply.author } } }
+      : {}),
     text: message.text,
     createdAt: message.createdAt,
     ...(message.reactionState ? { reactionState: message.reactionState } : {}),
@@ -85,6 +89,7 @@ class ChatService {
       }
       await this.activity.upload(chatId, {
         name: file.name,
+        ...(file.replyToId ? { replyToId: file.replyToId } : {}),
         mediaType: file.mediaType,
         bytes: file.bytes,
       });
@@ -219,12 +224,17 @@ class ChatService {
     const unique = new Map(messages.map((message) => [message.id, message]));
     return { messages: [...unique.values()], nextBefore: page.nextBefore };
   }
-  send(chatId: string, text: string): Promise<ChatMessage> {
+  send(chatId: string, text: string, replyToId?: string): Promise<ChatMessage> {
     if (!text.trim() || countCodePoints(text) > MESSAGE_TEXT_MAX_LENGTH) {
       return Promise.reject(new ChatError('validation'));
     }
 
-    return this.run(async () => mapMessage(await this.repository.send(chatId, text)));
+    return this.run(async () => {
+      const message = replyToId
+        ? await this.repository.send(chatId, text, replyToId)
+        : await this.repository.send(chatId, text);
+      return mapMessage(message);
+    });
   }
   setReaction(
     chatId: string,
@@ -243,6 +253,7 @@ class ChatService {
       mapMessage(
         await this.repository.sendVoice(chatId, {
           id: recording.id,
+          ...(recording.replyToId ? { replyToId: recording.replyToId } : {}),
           mediaType: recording.mediaType,
           bytes: recording.bytes,
         }),

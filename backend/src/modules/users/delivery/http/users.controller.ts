@@ -3,7 +3,16 @@ import {
   RateLimitPeriod,
 } from '../../../../core/rate-limit/rate-limit.decorator.js';
 import { ApiServiceUnavailableResponse } from '@nestjs/swagger';
-import { Body, Patch, BadRequestException } from '@nestjs/common';
+import {
+  Body,
+  Patch,
+  BadRequestException,
+  Delete,
+  Put,
+  Param,
+  HttpCode,
+  NotFoundException,
+} from '@nestjs/common';
 import { InvalidProfileError } from '../../domain/profile.models.js';
 import { UpdateProfileDto, ProfileResponseDto } from './dto/profile.dto.js';
 import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
@@ -20,6 +29,11 @@ import type { AuthenticatedRequest } from '../../../auth/delivery/http/auth-http
 import { UsersService } from '../../service/users.service.js';
 import { SearchUsersRequestDto } from './dto/search-users-request.dto.js';
 import { SearchUsersResponseDto } from './dto/search-users-response.dto.js';
+import {
+  AliasTargetDto,
+  SaveAliasDto,
+  UserAliasDto,
+} from './dto/user-alias.dto.js';
 
 @ApiServiceUnavailableResponse({
   description: 'Object storage is temporarily unavailable.',
@@ -30,6 +44,47 @@ import { SearchUsersResponseDto } from './dto/search-users-response.dto.js';
 @UseGuards(AccessTokenGuard)
 class UsersController {
   constructor(private readonly users: UsersService) {}
+
+  @Get('me/aliases')
+  @RateLimit(60, RateLimitPeriod.MINUTE)
+  @ApiOperation({ summary: 'List the signed-in user’s private nicknames' })
+  @ApiOkResponse({ type: [UserAliasDto] })
+  listAliases(@Req() request: AuthenticatedRequest): Promise<UserAliasDto[]> {
+    return this.users.listAliases(request.auth.user.id);
+  }
+
+  @Put('me/aliases/:targetUserId')
+  @RateLimit(30, RateLimitPeriod.MINUTE)
+  @ApiOperation({ summary: 'Save a private nickname for another user' })
+  @ApiOkResponse({ type: UserAliasDto })
+  async saveAlias(
+    @Param() params: AliasTargetDto,
+    @Body() dto: SaveAliasDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<UserAliasDto> {
+    const alias = await this.users.saveAlias(request.auth.user.id, {
+      targetUserId: params.targetUserId,
+      nickname: dto.nickname,
+      color: dto.color,
+    });
+
+    if (!alias) {
+      throw new NotFoundException('User not found.');
+    }
+
+    return alias;
+  }
+
+  @Delete('me/aliases/:targetUserId')
+  @HttpCode(204)
+  @RateLimit(30, RateLimitPeriod.MINUTE)
+  @ApiOperation({ summary: 'Remove a private nickname' })
+  async deleteAlias(
+    @Param() params: AliasTargetDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<void> {
+    await this.users.deleteAlias(request.auth.user.id, params.targetUserId);
+  }
 
   @Patch('me')
   @RateLimit(12, RateLimitPeriod.MINUTE)

@@ -1,7 +1,8 @@
 import { ApiProperty, ApiPropertyOptional, PickType } from '@nestjs/swagger';
 import { IsBase64, IsString, IsUUID, Length, MaxLength } from 'class-validator';
 import { FILE_EXAMPLES } from './attachment.examples.js';
-class SendAttachmentDto {
+import { ReplyTargetDto } from './reply-target.dto.js';
+class SendAttachmentDto extends ReplyTargetDto {
   @ApiProperty({ example: FILE_EXAMPLES.name, maxLength: 255 })
   @IsString()
   @Length(1, 255)
@@ -25,6 +26,7 @@ class SendAttachmentDto {
 class SendVoiceDto extends PickType(SendAttachmentDto, [
   'mediaType',
   'content',
+  'replyToId',
 ]) {
   @ApiProperty({ example: FILE_EXAMPLES.voiceId, format: 'uuid' })
   @IsUUID('4')

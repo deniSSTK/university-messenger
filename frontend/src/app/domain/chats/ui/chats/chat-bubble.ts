@@ -20,10 +20,12 @@ import { IconTrash } from '../../../../shared/ui/icons/trash';
 import { IconDownload } from '../../../../shared/ui/icons/download';
 import { IconCheck } from '../../../../shared/ui/icons/check';
 import { IconCheckDouble } from '../../../../shared/ui/icons/check-double';
+import { IconBack } from '../../../../shared/ui/icons/back';
 import { IconMore } from '../../../../shared/ui/icons/more';
 import { VoicePlayer } from './voice-player';
 import { Avatar } from '../../../../shared/ui/avatar/avatar';
 import { ChatImage } from './chat-image';
+import type { Nickname } from '../../../users/service/users';
 import type { MessageView, PersonView } from './chats-view.types';
 
 @Component({
@@ -41,6 +43,7 @@ import type { MessageView, PersonView } from './chats-view.types';
     VoicePlayer,
     ChatReactionPicker,
     Avatar,
+    IconBack,
   ],
   template: `
     <article
@@ -55,6 +58,32 @@ import type { MessageView, PersonView } from './chats-view.types';
       (pointercancel)="cancelPress()"
       (pointerleave)="cancelPress()"
     >
+      @if (authorName(); as name) {
+        <div class="message-author-line">
+          <button class="message-author" type="button" (click)="profile.emit()">{{ name }}</button>
+          @if (authorNickname(); as nickname) {
+            <span
+              class="nickname-badge"
+              [attr.data-nickname-color]="nickname.color"
+              [title]="nickname.nickname"
+              >{{ nickname.nickname }}</span
+            >
+          }
+        </div>
+      }
+      @if (message().reply; as quote) {
+        <button
+          class="reply-quote"
+          type="button"
+          [disabled]="!quote.author"
+          (click)="quoteSelected.emit(quote.id)"
+        >
+          <strong>{{ quoteName() || 'Оригінал недоступний' }}</strong>
+          @if (quote.author) {
+            <span>{{ quote.preview }}</span>
+          }
+        </button>
+      }
       @if (message().attachment; as file) {
         @if (file.voice; as voice) {
           <app-voice-player
@@ -163,6 +192,9 @@ import type { MessageView, PersonView } from './chats-view.types';
           [selected]="message().reactionState?.myReaction ?? null"
           (picked)="pickReaction($event)"
         />
+        <button type="button" (click)="selectMenuAction('replyRequested')">
+          <app-icon-back />Відповісти
+        </button>
         @if (message().attachment) {
           <button type="button" (click)="selectMenuAction('download')">
             <app-icon-download />Завантажити
@@ -203,6 +235,12 @@ class ChatBubble {
   readonly reactionPeer = input<PersonView | null>(null);
   readonly defaultReaction = input<ReactionType>('HEART');
   readonly react = output<ReactionType>();
+  readonly authorName = input('');
+  readonly authorNickname = input<Nickname>();
+  readonly quoteName = input('');
+  readonly profile = output<void>();
+  readonly replyRequested = output<void>();
+  readonly quoteSelected = output<string>();
   readonly pills = computed(() => {
     const reactions = this.message().reactionState?.reactions ?? [];
     return REACTION_TYPES.flatMap((type) => {
@@ -319,7 +357,7 @@ class ChatBubble {
     }
   }
 
-  selectMenuAction(action: 'download' | 'edit' | 'remove'): void {
+  selectMenuAction(action: 'download' | 'edit' | 'remove' | 'replyRequested'): void {
     if (!this.touchMenu) {
       this.closeMenu();
       this[action].emit();

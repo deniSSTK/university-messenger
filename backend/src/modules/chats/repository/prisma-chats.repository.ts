@@ -87,6 +87,17 @@ const messageSelect = {
     },
   },
   sender: { select: participantSelect },
+  replyTo: {
+    select: {
+      id: true,
+      chatId: true,
+      deletedAt: true,
+      createdAt: true,
+      text: true,
+      sender: { select: { id: true, displayName: true } },
+      attachment: { select: { type: true, fileName: true, fileType: true } },
+    },
+  },
 } as const;
 
 function selectPrivateChat(currentUserId: string) {
@@ -117,8 +128,15 @@ type ChatPageRow = {
 function mapMessage(
   message: Prisma.MessageGetPayload<{ select: typeof messageSelect }>,
   reactionState?: ReactionState,
+  clearedThrough?: Date | null,
 ): ChatMessage {
   const file = message.attachment;
+  const reply = message.replyTo;
+  const visibleReply =
+    reply &&
+    reply.chatId === message.chatId &&
+    !reply.deletedAt &&
+    (!clearedThrough || reply.createdAt > clearedThrough);
 
   return {
     id: message.id,
@@ -129,6 +147,19 @@ function mapMessage(
     createdAt: message.createdAt,
     editedAt: message.editedAt,
     readAt: message.readAt,
+    ...(reply && clearedThrough !== undefined
+      ? {
+          reply: {
+            id: reply.id,
+            author: visibleReply ? reply.sender : null,
+            preview: visibleReply
+              ? [...replyPreviewText(reply.text, reply.attachment).trim()]
+                  .slice(0, 160)
+                  .join('')
+              : '',
+          },
+        }
+      : {}),
     ...(reactionState
       ? { reactionState }
       : message.reactionVersion === 0
@@ -151,6 +182,33 @@ function mapMessage(
   };
 }
 
+function replyPreviewText(
+  text: string,
+  file: {
+    type: string;
+    fileName: string | null;
+    fileType: string | null;
+  } | null,
+): string {
+  if (!file) {
+    return text;
+  }
+
+  if (file.type === 'VOICE') {
+    return 'Голосове повідомлення';
+  }
+
+  if (file.fileType?.startsWith('image/')) {
+    return 'Фото';
+  }
+
+  if (file.fileType?.startsWith('video/')) {
+    return 'Відео';
+  }
+
+  return file.fileName ?? 'Файл';
+}
+
 function mapPrivateChat(chat: PrivateChatRow): PrivateChat | null {
   const recipient = chat.members[0]?.user;
 
@@ -165,7 +223,7 @@ async function visibleHistory(
   database: Prisma.TransactionClient,
   chatId: string,
   userId: string,
-): Promise<Prisma.MessageWhereInput> {
+): Promise<{ createdAt?: { gt: Date } }> {
   const membership = await database.chatMember.findFirst({
     where: { chatId, userId, deletedAt: null, chat: { deletedAt: null } },
     select: { historyClearedThrough: true },
@@ -521,7 +579,29 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
             throw new ChatNotFoundError();
           }
 
-          return { message: mapMessage(existing), created: false };
+          return {
+            message: mapMessage(
+              existing,
+              undefined,
+              membership.historyClearedThrough,
+            ),
+            created: false,
+          };
+        }
+      }
+
+      if (input.replyToId) {
+        const [target] = await transaction.$queryRaw<{ id: string }[]>`
+          SELECT "id" FROM "Message"
+          WHERE "id" = ${input.replyToId}::uuid AND "chatId" = ${input.chatId}::uuid
+            AND "deletedAt" IS NULL
+            AND (${membership.historyClearedThrough}::timestamptz IS NULL
+              OR "createdAt" > ${membership.historyClearedThrough}::timestamptz)
+          FOR SHARE
+        `;
+
+        if (!target) {
+          throw new ChatNotFoundError();
         }
       }
 
@@ -564,6 +644,9 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
               }
             : {}),
           ...(voice ? { voiceRequestId: voice.id } : {}),
+          ...(input.replyToId
+            ? { replyTo: { connect: { id: input.replyToId } } }
+            : {}),
           createdAt: activity.activityAt,
         },
         select: messageSelect,
@@ -583,7 +666,14 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
         data: { hiddenAt: null },
       });
 
-      return { message: mapMessage(message), created: true };
+      return {
+        message: mapMessage(
+          message,
+          undefined,
+          membership.historyClearedThrough,
+        ),
+        created: true,
+      };
     });
   }
 
@@ -755,7 +845,11 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
         input.userId,
       );
 
-      return mapMessage(message, reactions.get(message.id));
+      return mapMessage(
+        message,
+        reactions.get(message.id),
+        visible.createdAt?.gt ?? null,
+      );
     });
   }
 
@@ -859,6 +953,7 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
             deletedAt: null,
             ...visible,
             ...cursorFilter,
+            ...(input.messageId ? { id: input.messageId } : {}),
             ...(category
               ? {
                   attachment: {
@@ -880,7 +975,11 @@ class PrismaChatsRepository implements IChatsRepository, IMessagesRepository {
 
         return {
           items: page.map((message) =>
-            mapMessage(message, states.get(message.id)),
+            mapMessage(
+              message,
+              states.get(message.id),
+              visible.createdAt?.gt ?? null,
+            ),
           ),
           hasMore,
         };

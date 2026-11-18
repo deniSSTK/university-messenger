@@ -1,4 +1,4 @@
-import type { ReactionType } from '@university-messenger/events';
+import type { NicknameColor, ReactionType } from '@university-messenger/events';
 import { countCodePoints } from '../../../core/text/unicode';
 import { Injectable, inject } from '@angular/core';
 import { map, of, throwError } from 'rxjs';
@@ -25,9 +25,42 @@ interface UpdateProfileInput {
   defaultReaction?: ReactionType;
 }
 
+type Nickname = { nickname: string; color: NicknameColor };
+type UserNickname = Nickname & { targetUserId: string };
+
 @Injectable({ providedIn: 'root' })
 class Users {
   private repository = inject(USERS_REPOSITORY);
+
+  listAliases() {
+    return this.repository
+      .listAliases()
+      .pipe(
+        map((aliases): UserNickname[] =>
+          aliases.map(({ targetUserId, nickname, color }) => ({ targetUserId, nickname, color })),
+        ),
+      );
+  }
+
+  saveAlias(targetUserId: string, input: Nickname) {
+    const nickname = input.nickname.trim();
+    if (!nickname || countCodePoints(nickname) > 64) {
+      return throwError(() => new UserProfileValidationError());
+    }
+    return this.repository
+      .saveAlias(targetUserId, { nickname, color: input.color })
+      .pipe(
+        map(({ targetUserId, nickname, color }): UserNickname => ({
+          targetUserId,
+          nickname,
+          color,
+        })),
+      );
+  }
+
+  deleteAlias(targetUserId: string) {
+    return this.repository.deleteAlias(targetUserId);
+  }
 
   updateProfile(input: UpdateProfileInput) {
     const displayName = input.displayName.trim();
@@ -66,4 +99,11 @@ class Users {
   }
 }
 export { Users, UserSearchValidationError, UserProfileValidationError };
-export type { SearchUsersInput, SearchUsersResult, SearchUserResult, UpdateProfileInput };
+export type {
+  Nickname,
+  UserNickname,
+  SearchUsersInput,
+  SearchUsersResult,
+  SearchUserResult,
+  UpdateProfileInput,
+};

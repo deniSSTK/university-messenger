@@ -10,6 +10,12 @@ type ChatParticipant = {
 
 type VoiceMetadata = { durationMs: number; waveform: number[] };
 
+type ReplyPreview = {
+  id: string;
+  author: { id: string; displayName: string } | null;
+  preview: string;
+};
+
 type ChatMessage = {
   id: string;
   chatId: string;
@@ -26,6 +32,7 @@ type ChatMessage = {
   editedAt: Date | null;
   readAt?: Date | null;
   reactionState?: ReactionState;
+  reply?: ReplyPreview;
 };
 
 type PrivateChat = {
@@ -53,5 +60,6 @@ export type {
   ChatParticipant,
   MessageCursor,
   PrivateChat,
+  ReplyPreview,
   VoiceMetadata,
 };

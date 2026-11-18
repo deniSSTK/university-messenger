@@ -317,6 +317,18 @@
         </button>
         @if (chatMenuOpen()) {
           <nav class="popover dialog-menu" aria-label="Дії діалогу">
+            @if (active()) {
+              <button
+                appButton
+                variant="bare"
+                type="button"
+                class="menu-action"
+                aria-haspopup="dialog"
+                (click)="closeMenus(); nicknameEditorOpen.set(true)"
+              >
+                <app-icon-edit />Прізвисько
+              </button>
+            }
             <button
               appButton
               variant="bare"
@@ -399,10 +411,28 @@
                     class="message-row"
                     [class.own]="row.message.senderId === viewer()?.id"
                     [class.grouped]="row.grouped"
+                    [class.reply-highlight]="highlightedReplyId() === row.message.id"
                     [attr.data-message-id]="row.message.id"
                     (dblclick)="bubble.quickReact($event)"
                     (contextmenu)="bubble.openMenu($event)"
                   >
+                    @if (row.message.senderId !== viewer()?.id) {
+                      <div class="message-avatar-slot">
+                        @if (!row.grouped && authorFor(row.message); as author) {
+                          <button
+                            type="button"
+                            [attr.aria-label]="'Відкрити профіль: ' + author.displayName"
+                            (click)="peerProfileOpen.set(true)"
+                          >
+                            <app-avatar
+                              [size]="30"
+                              [name]="author.displayName"
+                              [src]="author.avatarUrl"
+                            />
+                          </button>
+                        }
+                      </div>
+                    }
                     <app-chat-bubble
                       #bubble
                       [chatId]="selectedId()!"
@@ -411,6 +441,18 @@
                       [reactionViewer]="viewer()"
                       [reactionPeer]="active()?.person ?? null"
                       [defaultReaction]="viewer()?.defaultReaction ?? 'HEART'"
+                      [authorName]="
+                        !row.grouped &&
+                        row.message.senderId !== viewer()?.id &&
+                        authorFor(row.message)
+                          ? (authorFor(row.message)?.displayName ?? '')
+                          : ''
+                      "
+                      [authorNickname]="aliases().get(row.message.senderId)"
+                      [quoteName]="row.message.reply?.author?.displayName ?? ''"
+                      (profile)="peerProfileOpen.set(true)"
+                      (replyRequested)="beginReply(row.message)"
+                      (quoteSelected)="jumpToReply($event)"
                       (react)="react(row.message, $event)"
                       (edit)="beginEdit(row.message)"
                       (remove)="deleteMessage(row.message)"
@@ -436,6 +478,23 @@
           }
         </div>
         <div class="composer-panel">
+          @if (replyTarget(); as target) {
+            <div class="reply-composer">
+              <div class="reply-quote">
+                <strong>{{ authorFor(target)?.displayName ?? 'Повідомлення' }}</strong>
+                <span>{{ replyText(target) }}</span>
+              </div>
+              <button
+                appButton
+                variant="icon"
+                type="button"
+                aria-label="Скасувати відповідь"
+                (click)="replyTarget.set(null)"
+              >
+                <app-icon-close />
+              </button>
+            </div>
+          }
           @if (actionError()) {
             <p role="alert" class="composer-error">{{ actionError() }}</p>
           }
@@ -480,6 +539,7 @@
               (submit)="$event.preventDefault(); voice.phase() === 'idle' && send()"
             >
               <app-voice-composer
+                [replyToId]="replyTarget()?.id"
                 #voice
                 [chatId]="chatId"
                 [class.composer-hidden]="draft().length > 0 || sending() || !!editingId()"
@@ -560,6 +620,15 @@
     [mediaRevision]="peerMediaRevision()"
     (closed)="peerProfileOpen.set(false)"
     (hidden)="peerChatHidden(chat.id)"
+  />
+}
+
+@if (nicknameEditorOpen() && active(); as chat) {
+  <app-chat-nickname-editor
+    [targetId]="chat.person.id"
+    [nickname]="aliases().get(chat.person.id)"
+    (aliasChanged)="updateAlias(chat.person.id, $event)"
+    (closed)="nicknameEditorOpen.set(false)"
   />
 }
 

@@ -8,6 +8,8 @@ interface ChatPersonRecord {
   avatarUrl?: string | null;
 }
 interface ChatMessageRecord {
+  reply?: { id: string; author: { id: string; displayName: string } | null; preview: string };
+  sender?: ChatPersonRecord;
   reactionState?: ReactionState;
   id: string;
   senderId: string;
@@ -43,7 +45,12 @@ class ChatRepositoryError extends Error {
     super(code);
   }
 }
-type VoiceRecordingRecord = { id: string; mediaType: string; bytes: Uint8Array };
+type VoiceRecordingRecord = {
+  id: string;
+  mediaType: string;
+  bytes: Uint8Array;
+  replyToId?: string;
+};
 type MediaCategoryRecord = 'photos' | 'videos' | 'files' | 'audio' | 'voice' | 'gifs';
 type MediaCountsRecord = Record<MediaCategoryRecord, number>;
 
@@ -61,7 +68,7 @@ interface ChatsRepository {
     limit: number,
   ): Promise<HistoryRecord>;
   hide(chatId: string): Promise<void>;
-  send(chatId: string, text: string): Promise<ChatMessageRecord>;
+  send(chatId: string, text: string, replyToId?: string): Promise<ChatMessageRecord>;
   setReaction(chatId: string, messageId: string, type: ReactionType | null): Promise<ReactionState>;
   sendVoice(chatId: string, recording: VoiceRecordingRecord): Promise<ChatMessageRecord>;
 }

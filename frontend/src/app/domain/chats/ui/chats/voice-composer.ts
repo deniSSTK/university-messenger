@@ -139,6 +139,7 @@ class VoiceComposer {
 
   readonly chatId = input.required<string>();
   readonly blocked = input(false);
+  readonly replyToId = input<string>();
   readonly sent = output<{ chatId: string; message: ChatMessage }>();
   readonly phase = signal<RecordingPhase>('idle');
   readonly elapsed = signal(0);
@@ -328,7 +329,9 @@ class VoiceComposer {
     this.error.set('');
 
     try {
+      const replyToId = this.replyToId();
       const message = await this.chat.sendVoice(chatId, {
+        ...(replyToId ? { replyToId } : {}),
         id: draft.id,
         bytes: new Uint8Array(await draft.blob.arrayBuffer()),
         mediaType: draft.blob.type,

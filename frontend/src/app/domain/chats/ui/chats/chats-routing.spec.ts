@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { Title } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { of } from 'rxjs';
@@ -21,7 +22,13 @@ describe('direct chat URLs', () => {
       providers: [
         provideRouter(routes),
         { provide: Auth, useValue: { restoreSession, logout: vi.fn() } },
-        { provide: Users, useValue: { search: () => of({ users: [], page: 1, totalPages: 0 }) } },
+        {
+          provide: Users,
+          useValue: {
+            search: () => of({ users: [], page: 1, totalPages: 0 }),
+            listAliases: () => of([]),
+          },
+        },
         {
           provide: ChatService,
           useValue: {
@@ -44,7 +51,9 @@ describe('direct chat URLs', () => {
     expect(get).toHaveBeenCalledWith('saved-chat');
     expect(component.selectedId()).toBe('saved-chat');
     expect(component.active()?.person.username).toBe('alex');
+    expect(TestBed.inject(Title).getTitle()).toBe('Alex');
     const list = await harness.navigateByUrl('/chats', Chats);
     expect(list.selectedId()).toBeNull();
+    expect(TestBed.inject(Title).getTitle()).toBe('Chats');
   });
 });

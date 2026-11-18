@@ -1,3 +1,4 @@
+import type { UserAlias } from '../domain/user-alias.js';
 import { randomUUID } from 'node:crypto';
 import type { ObjectStorage } from '../../media/domain/object-storage.port.js';
 import { MediaUnavailableError } from '../../media/domain/object-storage.port.js';
@@ -10,6 +11,25 @@ import type { UsersRepository } from '../domain/users.repository.js';
 import type { SearchUsersInput, SearchUsersResult } from './users.types.js';
 
 class UsersService {
+  listAliases(ownerId: string): Promise<UserAlias[]> {
+    return this.repository.listAliases(ownerId);
+  }
+
+  saveAlias(ownerId: string, alias: UserAlias): Promise<UserAlias | null> {
+    if (ownerId === alias.targetUserId.toLowerCase()) {
+      return Promise.resolve(null);
+    }
+
+    return this.repository.saveAlias(ownerId, {
+      ...alias,
+      nickname: alias.nickname.trim(),
+    });
+  }
+
+  deleteAlias(ownerId: string, targetUserId: string): Promise<void> {
+    return this.repository.deleteAlias(ownerId, targetUserId);
+  }
+
   constructor(
     private readonly repository: UsersRepository,
     private readonly storage?: ObjectStorage,

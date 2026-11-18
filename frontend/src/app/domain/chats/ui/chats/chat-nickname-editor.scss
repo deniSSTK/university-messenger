@@ -1,0 +1,43 @@
+app-dialog {
+  --dialog-background: var(--chat-surface);
+  --dialog-color: var(--chat-text);
+}
+form {
+  display: grid;
+  gap: 10px;
+}
+input {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--chat-muted);
+  border-radius: 6px;
+  background: var(--chat-raised);
+  color: var(--chat-text);
+  font: inherit;
+}
+.nickname-colors,
+.nickname-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.nickname-swatch {
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: var(--nickname-color);
+  cursor: pointer;
+}
+.nickname-swatch[aria-pressed='true'] {
+  outline: 2px solid var(--chat-text);
+  outline-offset: 2px;
+}
+.nickname-preview {
+  justify-self: start;
+  overflow-wrap: anywhere;
+}
+.nickname-actions button[data-variant='ghost']:hover:not(:disabled) {
+  background: var(--chat-raised);
+}

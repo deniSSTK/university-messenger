@@ -13,6 +13,39 @@
   line-height: 21px;
   box-shadow: 0 1px 1px #0002;
 }
+.message-author-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.message-author-line .nickname-badge {
+  min-width: 0;
+  max-width: 65%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.message-author {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 0;
+  background: transparent;
+  color: var(--chat-accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.message-author:hover {
+  text-decoration: underline;
+}
+.reply-quote {
+  margin-block: 3px 5px;
+}
 .message.own {
   border-radius: 14px 14px 4px 14px;
   background: #2b5278;

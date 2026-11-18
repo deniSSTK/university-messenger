@@ -4,6 +4,7 @@ import type { ReactionSnapshot } from './message-reactions.js';
 type ChatActivityEvent = {
   type: WebSocketEventType.Changed | WebSocketEventType.Typing;
   chatId: string;
+  messageId?: string;
   userId?: string;
   typing?: boolean;
 };

@@ -7,6 +7,8 @@ interface PersonView {
   avatarUrl?: string | null;
 }
 interface MessageView {
+  reply?: { id: string; author: { id: string; displayName: string } | null; preview: string };
+  sender?: PersonView;
   reactionState?: ReactionState;
   id: string;
   senderId: string;

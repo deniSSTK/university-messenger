@@ -10,9 +10,11 @@ import { IconBack } from '../../../../shared/ui/icons/back';
 import { IconSearch } from '../../../../shared/ui/icons/search';
 import { IconMenu } from '../../../../shared/ui/icons/menu';
 import { IconChat } from '../../../../shared/ui/icons/chat';
+import { IconEdit } from '../../../../shared/ui/icons/edit';
 import { IconMore } from '../../../../shared/ui/icons/more';
 import { IconChevronDown } from '../../../../shared/ui/icons/chevron-down';
 import { IconClose } from '../../../../shared/ui/icons/close';
+import { ChatNicknameEditor } from './chat-nickname-editor';
 import { ChatPeerProfile } from './chat-peer-profile';
 import { downloadAttachment } from './download-attachment';
 import { ChatProfileEditor } from './chat-profile-editor';
@@ -22,9 +24,11 @@ import {
   ElementRef,
   ViewChild,
   computed,
+  effect,
   inject,
   signal,
 } from '@angular/core';
+import { Title } from '@angular/platform-browser';
 import { ActivatedRoute, Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject, catchError, map, of, switchMap, timer, firstValueFrom } from 'rxjs';
@@ -32,6 +36,7 @@ import { countCodePoints } from '../../../../core/text/unicode';
 import { Auth } from '../../../auth/service/auth';
 import { authErrorMessage } from '../../../auth/ui/auth-form.utils';
 import { Users, UserSearchValidationError } from '../../../users/service/users';
+import type { Nickname, UserNickname } from '../../../users/service/users';
 import { MESSAGE_TEXT_MAX_LENGTH } from '../../chats.constants';
 import { ChatService, ChatError } from '../../service/chats';
 import type { ChatPerson, ChatMessage, Conversation } from '../../service/chats.types';
@@ -54,6 +59,10 @@ function messageView(message: ChatMessage): MessageView {
   return {
     id: message.id,
     senderId: message.senderId,
+    ...(message.sender ? { sender: personView(message.sender) } : {}),
+    ...(message.reply
+      ? { reply: { ...message.reply, author: message.reply.author && { ...message.reply.author } } }
+      : {}),
     text: message.text,
     createdAt: message.createdAt,
     ...(message.reactionState ? { reactionState: message.reactionState } : {}),
@@ -141,6 +150,7 @@ function mergeMessages(current: MessageView[], incoming: MessageView[]) {
     IconClose,
     IconChevronDown,
     IconMore,
+    IconEdit,
     IconChat,
     IconMenu,
     IconSearch,
@@ -151,9 +161,10 @@ function mergeMessages(current: MessageView[], incoming: MessageView[]) {
     ChatAccountMenu,
     ChatProfileEditor,
     ChatPeerProfile,
+    ChatNicknameEditor,
   ],
   templateUrl: './chats.html',
-  styleUrls: ['./chats.scss', './chats-activity.scss'],
+  styleUrls: ['./chats.scss', './chats-activity.scss', './chats-replies.scss'],
 })
 class Chats {
   private auth = inject(Auth);
@@ -161,6 +172,7 @@ class Chats {
   private route = inject(ActivatedRoute);
   private service = inject(ChatService);
   private users = inject(Users);
+  private readonly title = inject(Title);
   private destroy = inject(DestroyRef);
   readonly drafts = inject(ChatDrafts);
   private searchRequests = new Subject<{ search: string; page: number; wait: boolean }>();
@@ -170,7 +182,8 @@ class Chats {
   private destroyed = false;
   private listPage = 0;
   @ViewChild('messageViewport') private viewport?: ElementRef<HTMLElement>;
-  @ViewChild('composerInput') private composerInput?: ElementRef<HTMLTextAreaElement>;
+  @ViewChild('composerInput', { read: ElementRef })
+  private composerInput?: ElementRef<HTMLTextAreaElement>;
   private historyRetry: 'older' | 'refresh' = 'refresh';
   private latestFetchedMessageId: string | null = null;
   private listRetryMore = false;
@@ -182,6 +195,12 @@ class Chats {
   readonly actionBusy = signal(false);
   readonly actionError = signal('');
   readonly peerProfileOpen = signal(false);
+  readonly nicknameEditorOpen = signal(false);
+  readonly aliases = signal(new Map<string, Nickname>());
+  readonly replyTarget = signal<MessageView | null>(null);
+  readonly highlightedReplyId = signal<string | null>(null);
+  private replyNavigation = 0;
+  private replyHighlightTimer?: ReturnType<typeof setTimeout>;
   readonly peerMediaRevision = signal(0);
   readonly profileOpen = signal(false);
   readonly profileName = signal('');
@@ -262,6 +281,14 @@ class Chats {
   );
 
   constructor() {
+    effect(() => {
+      const chatId = this.selectedId();
+      const active = this.active();
+      const chat = active?.id === chatId ? active : this.chats().find(({ id }) => id === chatId);
+      const name = this.chatError() ? undefined : chat?.person.displayName;
+      this.title.setTitle(name || 'Chats');
+    });
+
     this.destroy.onDestroy(() => {
       this.destroyed = true;
       this.chatGeneration++;
@@ -306,6 +333,14 @@ class Chats {
     this.route.paramMap.pipe(takeUntilDestroyed(this.destroy)).subscribe((params) => {
       void this.selectChat(params.get('chatId'));
     });
+    this.users
+      .listAliases()
+      .pipe(takeUntilDestroyed(this.destroy))
+      .subscribe({
+        next: (list) => this.aliases.set(new Map(list.map((alias) => [alias.targetUserId, alias]))),
+        error: () => this.actionError.set('Не вдалося завантажити псевдоніми.'),
+      });
+    this.destroy.onDestroy(() => clearTimeout(this.replyHighlightTimer));
     void this.loadChats();
     const stop = this.service.watch((event) => {
       if (event.type === WebSocketEventType.Offline) {
@@ -453,6 +488,10 @@ class Chats {
     void this.router.navigate(['/chats']);
   }
   async selectChat(chatId: string | null) {
+    this.nicknameEditorOpen.set(false);
+    this.replyTarget.set(null);
+    this.highlightedReplyId.set(null);
+    this.replyNavigation++;
     this.peerProfileOpen.set(false);
     const generation = ++this.chatGeneration;
     this.navigationGeneration++;
@@ -644,7 +683,99 @@ class Chats {
       this.drafts.set(viewer.id, chatId, text);
     }
   }
+  updateAlias(targetUserId: string, alias: UserNickname | null): void {
+    this.aliases.update((current) => {
+      const updated = new Map(current);
+      if (alias) {
+        updated.set(targetUserId, { nickname: alias.nickname, color: alias.color });
+      } else {
+        updated.delete(targetUserId);
+      }
+      return updated;
+    });
+  }
+
+  authorFor(message: MessageView): PersonView | undefined {
+    return (
+      message.sender ??
+      (message.senderId === this.viewer()?.id
+        ? (this.viewer() ?? undefined)
+        : this.active()?.person)
+    );
+  }
+
+  beginReply(message: MessageView): void {
+    this.editingId.set(null);
+    this.replyTarget.set(message);
+    const chatId = this.selectedId();
+    if (chatId) {
+      this.afterRender(chatId, () => this.composerInput?.nativeElement.focus());
+    }
+  }
+
+  replyText(message: MessageView): string {
+    const file = message.attachment;
+    if (!file) {
+      return [...message.text.trim()].slice(0, 160).join('');
+    }
+    if (file.voice) {
+      return 'Голосове повідомлення';
+    }
+    if (file.mediaType.startsWith('image/')) {
+      return 'Фото';
+    }
+    if (file.mediaType.startsWith('video/')) {
+      return 'Відео';
+    }
+    return file.name;
+  }
+
+  async jumpToReply(id: string): Promise<void> {
+    const chatId = this.selectedId();
+    if (!chatId) {
+      return;
+    }
+
+    const navigation = ++this.replyNavigation;
+    while (navigation === this.replyNavigation && !this.messages().some((item) => item.id === id)) {
+      const cursor = this.nextBefore();
+      if (!cursor) {
+        break;
+      }
+      await this.loadOlder();
+      if (this.nextBefore() === cursor) {
+        break;
+      }
+    }
+
+    if (navigation !== this.replyNavigation) {
+      return;
+    }
+    if (!this.messages().some((item) => item.id === id)) {
+      this.actionError.set('Оригінал повідомлення недоступний.');
+      return;
+    }
+
+    this.afterRender(chatId, () => {
+      if (navigation !== this.replyNavigation) {
+        return;
+      }
+      const row = this.viewport?.nativeElement.querySelector<HTMLElement>(
+        `[data-message-id="${CSS.escape(id)}"]`,
+      );
+      row?.scrollIntoView?.({ block: 'center' });
+      clearTimeout(this.replyHighlightTimer);
+      this.highlightedReplyId.set(id);
+      this.replyHighlightTimer = setTimeout(() => this.highlightedReplyId.set(null), 1500);
+    });
+  }
+
   composerKey(event: KeyboardEvent) {
+    if (event.key === 'Escape' && !event.isComposing && this.replyTarget()) {
+      event.preventDefault();
+      this.replyTarget.set(null);
+      return;
+    }
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
       event.preventDefault();
       void this.send();
@@ -659,19 +790,25 @@ class Chats {
     }
 
     const text = this.draft();
+    const reply = this.replyTarget();
     this.service.typing(chatId, false);
     const key = `${viewer.id}:${chatId}`;
     this.drafts.begin(chatId);
     this.drafts.errors.update((errors) => new Map([...errors].filter(([id]) => id !== key)));
 
     try {
-      const message = await this.service.send(chatId, text);
+      const message = await (reply
+        ? this.service.send(chatId, text, reply.id)
+        : this.service.send(chatId, text));
 
       if (this.drafts.get(viewer.id, chatId) === text) {
         this.drafts.set(viewer.id, chatId, '');
       }
 
       if (!this.destroyed && this.selectedId() === chatId) {
+        if (this.replyTarget() === reply) {
+          this.replyTarget.set(null);
+        }
         this.messages.update((current) => mergeMessages(current, [messageView(message)]));
         this.draft.set(this.drafts.get(viewer.id, chatId));
         this.afterRender(chatId, () => this.resizeComposer());
@@ -862,6 +999,9 @@ class Chats {
   }
 
   voiceSent(chatId: string, message: ChatMessage): void {
+    if (this.selectedId() === chatId && message.reply?.id === this.replyTarget()?.id) {
+      this.replyTarget.set(null);
+    }
     if (this.selectedId() === chatId) {
       this.messages.update((current) => mergeMessages(current, [messageView(message)]));
       this.afterRender(chatId, () => this.scrollToBottom());
@@ -884,12 +1024,17 @@ class Chats {
     this.actionBusy.set(true);
     this.actionError.set('');
     try {
+      const reply = this.replyTarget();
       const bytes = new Uint8Array(await file.arrayBuffer());
       await this.service.upload(chatId, {
         name: file.name,
         mediaType: file.type || 'application/octet-stream',
         bytes,
+        ...(reply ? { replyToId: reply.id } : {}),
       });
+      if (this.selectedId() === chatId && this.replyTarget() === reply) {
+        this.replyTarget.set(null);
+      }
       this.queueLiveSync();
     } catch {
       this.actionError.set('Не вдалося надіслати файл. Спробуйте ще раз.');
@@ -930,7 +1075,18 @@ class Chats {
     try {
       await this.service.remove(chatId, message.id);
       if (this.selectedId() === chatId) {
-        this.messages.update((messages) => messages.filter((item) => item.id !== message.id));
+        this.messages.update((messages) =>
+          messages
+            .filter((item) => item.id !== message.id)
+            .map((item) =>
+              item.reply?.id === message.id
+                ? { ...item, reply: { id: message.id, author: null, preview: '' } }
+                : item,
+            ),
+        );
+        if (this.replyTarget()?.id === message.id) {
+          this.replyTarget.set(null);
+        }
       }
       this.queueLiveSync();
     } catch {

@@ -5,8 +5,9 @@ import {
   MESSAGE_TEXT_MIN_LENGTH,
 } from '../../../domain/chats.constants.js';
 import { CHATS_EXAMPLES } from './chats.examples.js';
+import { ReplyTargetDto } from './reply-target.dto.js';
 
-class SendMessageDto {
+class SendMessageDto extends ReplyTargetDto {
   @ApiProperty({
     example: CHATS_EXAMPLES.text,
     minLength: MESSAGE_TEXT_MIN_LENGTH,

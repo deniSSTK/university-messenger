@@ -13,7 +13,7 @@ type ActivityRecord = {
   typing?: boolean;
   reaction?: ReactionState & { messageId: string };
 };
-type FileRecord = { name: string; mediaType: string; bytes: Uint8Array };
+type FileRecord = { name: string; mediaType: string; bytes: Uint8Array; replyToId?: string };
 interface ActivityRepository {
   upload(chatId: string, file: FileRecord): Promise<void>;
   download(chatId: string, messageId: string): Promise<FileRecord>;

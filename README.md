@@ -366,6 +366,10 @@ Node.js `22.19.0` is below the Angular CLI minimum and cannot run the frontend b
 
 A double click toggles the saved default message reaction. Right-click or touch and hold a message to choose from seven reactions. New users default to HEART and can change it in their profile. Each user has one reaction per message. Updating a reaction uses `PUT /chats/:chatId/messages/:messageId/reaction`, with `type: null` to remove it. Connected participants receive `message:reaction:update` with their own selection and a version for ordering. History includes reaction state.
 
+Message replies accept an optional `replyToId` on the text, attachment, and voice send endpoints. The target must be visible to the sender and belong to the same chat. Send responses and message history return a `reply` preview. A deleted or cleared original has a null author and an empty preview. The existing `changed` WebSocket event can include `messageId` and a recipient-filtered `reply`; clients continue to synchronize history through the authorized API.
+
+Private nicknames appear beside incoming authors’ display names and can be edited from the chat header menu. `GET /users/me/aliases` lists them, `PUT /users/me/aliases/:targetUserId` saves a `nickname` and palette `color`, and `DELETE` on that path removes the nickname. The authenticated user owns every alias returned or modified by these endpoints.
+
 ## API rate limits
 
 `@RateLimit(count, RateLimitPeriod.MINUTE)` sets a fixed window per endpoint and authenticated user. Public auth endpoints use the client IP, grouping IPv6 clients by /64. A rejected request returns HTTP 429 and `Retry-After` in seconds.
@@ -374,6 +378,7 @@ A double click toggles the saved default message reaction. Right-click or touch 
 | --- | ---: |
 | Register / log in / refresh | 10 / 15 / 60 |
 | Update profile / search users | 12 / 90 |
+| List / save / delete private nicknames | 60 / 30 / 30 |
 | Open chat / count shared media | 30 / 60 |
 | Send text / upload file / send voice / react | 90 / 20 / 12 / 90 |
 | Download attachment / read message history | 180 / 240 |
