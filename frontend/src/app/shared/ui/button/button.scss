@@ -15,15 +15,15 @@
     background 0.15s,
     color 0.15s,
     opacity 0.15s;
-  background: #5288c1;
-  color: white;
+  background: var(--accent-strong);
+  color: var(--text-on-accent);
   text-decoration: none;
 }
 :host([data-variant='primary']):hover:not(:disabled) {
-  background: #4178b2;
+  background: var(--accent-hover);
 }
 :host:focus-visible {
-  outline: 3px solid #9ac2ed;
+  outline: 3px solid var(--accent-outline);
   outline-offset: 2px;
 }
 :host:disabled {
@@ -31,12 +31,12 @@
   opacity: 0.5;
 }
 :host(:where([data-variant='secondary'])) {
-  background: #edf3f8;
-  color: #315779;
-  border-color: #dbe6ee;
+  background: var(--bg-accent-soft);
+  color: var(--text-accent-strong);
+  border-color: var(--border-color);
 }
 :host(:where([data-variant='secondary'])):hover:not(:disabled) {
-  background: #dfeaf3;
+  background: var(--bg-surface-hover);
 }
 :host(:where([data-variant='ghost'])),
 :host(:where([data-variant='icon'])),
@@ -46,7 +46,7 @@
 }
 :host(:where([data-variant='ghost'])):hover:not(:disabled),
 :host(:where([data-variant='icon'])):hover:not(:disabled) {
-  background: #172b3c0b;
+  background: var(--bg-surface-hover);
 }
 :host(:where([data-variant='icon'])) {
   width: 40px;
@@ -66,11 +66,11 @@
   justify-content: inherit;
 }
 :host(:where([data-variant='danger'])) {
-  background: #fff0f1;
-  color: #b73a44;
+  background: var(--bg-danger);
+  color: var(--danger-strong);
 }
 :host(:where([data-variant='danger'])):hover:not(:disabled) {
-  background: #ffe1e4;
+  background: var(--bg-danger-hover);
 }
 @media (prefers-reduced-motion: reduce) {
   :host {

@@ -4,9 +4,9 @@
   width: 100%;
   min-width: 0;
   padding: 12px 14px;
-  color: #203347;
-  background: #fff;
-  border: 1px solid #d4dfe8;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
   font: inherit;
   line-height: 1.4;
@@ -16,11 +16,11 @@
 }
 :host:focus {
   outline: none;
-  border-color: #5288c1;
-  box-shadow: 0 0 0 3px #5288c11a;
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 3px var(--accent-focus-shadow);
 }
 :host([aria-invalid='true']) {
-  border-color: #c94b57;
+  border-color: var(--danger-border);
 }
 :host:disabled {
   opacity: 0.55;

@@ -5,20 +5,20 @@ app-auth-card {
   min-height: 100dvh;
   padding: 20px;
   box-sizing: border-box;
-  background: #0e1621;
-  color: #f5f5f5;
+  background: var(--bg-page);
+  color: var(--text-primary);
 }
 app-auth-card > section {
   width: 100%;
   max-width: 420px;
   padding: 32px;
-  background: #17212b;
+  background: var(--bg-surface);
   border-radius: 18px;
-  box-shadow: 0 8px 40px #0003;
+  box-shadow: var(--shadow-card);
 }
 app-auth-card h1 {
   margin: 0 0 28px;
-  color: #f5f5f5;
+  color: var(--text-primary);
   font-size: 26px;
 }
 app-auth-card button[appButton] {
@@ -26,35 +26,35 @@ app-auth-card button[appButton] {
   margin-top: 8px;
 }
 app-auth-card app-form-field > label {
-  color: #a4b8ca;
+  color: var(--text-secondary);
 }
 app-auth-card input[appInput] {
-  color: #f5f5f5;
-  background: #242f3d;
-  border-color: #3b5368;
+  color: var(--text-primary);
+  background: var(--bg-surface-muted);
+  border-color: var(--border-color);
 }
 app-auth-card input[appInput]::placeholder {
-  color: #7f91a4;
+  color: var(--text-muted);
 }
 app-auth-card input[appInput]:focus {
-  border-color: #6ab2f2;
-  box-shadow: 0 0 0 3px #6ab2f21a;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px var(--accent-focus-shadow);
 }
 app-auth-card input[appInput][aria-invalid='true'] {
-  border-color: #f37583;
+  border-color: var(--danger-color);
 }
 app-auth-card input[appInput]:-webkit-autofill {
-  -webkit-text-fill-color: #f5f5f5;
-  caret-color: #f5f5f5;
-  box-shadow: inset 0 0 0 1000px #242f3d;
+  -webkit-text-fill-color: var(--text-primary);
+  caret-color: var(--text-primary);
+  box-shadow: inset 0 0 0 1000px var(--bg-surface-muted);
 }
 app-auth-card .error-messages small {
-  color: #f37583;
+  color: var(--danger-color);
 }
 app-auth-card .nav-link {
   display: block;
   margin-top: 24px;
-  color: #6ab2f2;
+  color: var(--accent-color);
   text-align: center;
   text-decoration: none;
 }
@@ -62,7 +62,7 @@ app-auth-card .nav-link:hover {
   text-decoration: underline;
 }
 app-auth-card .api-error {
-  color: #f37583;
+  color: var(--danger-color);
   margin: 14px 0;
 }
 @media (max-width: 400px) {

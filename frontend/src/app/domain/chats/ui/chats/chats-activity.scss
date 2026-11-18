@@ -1,8 +1,8 @@
 .connection-status {
   margin: 0;
   padding: 8px 16px;
-  background: #263b4c;
-  color: #b8d3e9;
+  background: var(--bg-status);
+  color: var(--text-secondary);
   font-size: 13px;
 }
 .unread-badge {
@@ -15,8 +15,8 @@
   margin-left: auto;
   padding: 0 5px;
   border-radius: 50%;
-  background: #4b657e;
-  color: white;
+  background: var(--bg-unread);
+  color: var(--text-on-accent);
   font-size: 12px;
   line-height: 1;
 }
@@ -24,7 +24,7 @@
   display: grid;
   gap: 8px;
   padding: 12px;
-  border-bottom: 1px solid #ffffff0a;
+  border-bottom: 1px solid var(--border-divider);
 }
 .edit-message label {
   color: var(--chat-accent);
@@ -34,7 +34,7 @@
   width: 100%;
   min-height: 64px;
   background: var(--chat-raised);
-  border-color: #3b5368;
+  border-color: var(--border-color);
   color: var(--chat-text);
 }
 .edit-actions {
