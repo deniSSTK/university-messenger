@@ -104,7 +104,10 @@ jobs:
           tags: ${{ steps.images.outputs.prefix }}-web:${{ github.sha }}
 
   deploy:
-    if: github.event_name == 'workflow_dispatch' && inputs.deploy && github.ref == 'refs/heads/main'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy))
     needs: [backend, frontend, containers]
     runs-on: ubuntu-latest
     environment: production
@@ -138,6 +141,7 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
           REVISION: ${{ github.sha }}
+          DEPLOY_EVENT: ${{ github.event_name }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -169,6 +173,10 @@ jobs:
           ssh -o ConnectTimeout=30 messenger-deploy \
             "cd $remote_path && \
              git fetch origin main && \
+             if [ '$DEPLOY_EVENT' = push ] && [ \"\$(git rev-parse FETCH_HEAD)\" != '$REVISION' ]; then \
+               echo 'A newer main revision is available; skipping this deployment.'; \
+               exit 0; \
+             fi && \
              git checkout --detach $REVISION && \
              export BACKEND_IMAGE=$image_prefix-backend:$REVISION \
                     FRONTEND_IMAGE=$image_prefix-web:$REVISION && \
